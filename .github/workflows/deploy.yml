@@ -5,11 +5,31 @@ on:
     branches: [main]
 
 jobs:
-  deploy:
+  audit:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Audit backend dependencies
+        run: npm audit --audit-level=high
+        working-directory: ./backend
+
+      - name: Audit frontend dependencies
+        run: npm audit --audit-level=high
+        working-directory: ./frontend
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: audit
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.2.5
