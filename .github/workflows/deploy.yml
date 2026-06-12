@@ -20,4 +20,4 @@ jobs:
           script: |
             cd /home/student36/orca
             git pull origin main
-            docker compose up -d --build
+            docker compose -f docker-compose.prod.yml up -d --build
