@@ -118,9 +118,22 @@ jobs:
         with:
           category: codeql-javascript
 
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   deploy:
     runs-on: ubuntu-latest
-    needs: [audit, sca, sast, codeql]
+    needs: [audit, sca, sast, codeql, gitleaks]
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
