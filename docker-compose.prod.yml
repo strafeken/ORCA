@@ -1,6 +1,6 @@
 services:
   nginx:
-    image: nginx:alpine
+    image: nginx:1.30.2-alpine
     ports:
       - "80:80"
       - "443:443"
@@ -39,7 +39,7 @@ services:
           memory: 256m
 
   db:
-    image: mysql:8.4
+    image: mysql:8.4.9
     env_file:
       - .env
     command: --innodb-buffer-pool-size=128M --innodb-log-buffer-size=16M
