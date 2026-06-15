@@ -1,0 +1,14 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  security-checks:
+    uses: ./.github/workflows/security-checks.yml
+    secrets: inherit
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
