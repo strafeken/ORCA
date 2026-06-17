@@ -22,12 +22,22 @@ const registerWebRTCHandlers = (io, socket) => {
             }
 
             const room = `call:${conversationId}`;
+
+            // Get sockets already in the room BEFORE we join, so we can tell the new joiner about them
+            const existingSockets = await io.in(room).fetchSockets();
+
             socket.join(room);
             socket.currentCallId = conversationId;
 
-            // Tell the other participant someone joined (so they can initiate the offer)
+            // Tell the new joiner about everyone already present in the room
+            existingSockets.forEach((existingSocket) => {
+                socket.emit('call:user-joined', { userId: existingSocket.user.id, name: existingSocket.user.name });
+            });
+
+            // Tell everyone already present about the new joiner
             socket.to(room).emit('call:user-joined', { userId: user.id, name: user.name });
-            system.info('User joined call room', { context: 'webrtc', userId: user.id, conversationId });
+
+            system.info('User joined call room', { context: 'webrtc', userId: user.id, conversationId, existingCount: existingSockets.length });
         } catch (err) {
             system.error('call:join error', { context: 'webrtc', error: err.message });
             socket.emit('call:error', { message: 'Failed to join call' });
@@ -52,6 +62,7 @@ const registerWebRTCHandlers = (io, socket) => {
             socket.emit('call:error', { message: 'Access denied to this conversation' });
             return;
         }
+        system.info('Relaying call answer', { context: 'webrtc', userId: user.id, conversationId });
         socket.to(`call:${conversationId}`).emit('call:answer', { answer, fromUserId: user.id });
     });
 
@@ -67,6 +78,7 @@ const registerWebRTCHandlers = (io, socket) => {
         const room = `call:${conversationId}`;
         socket.to(room).emit('call:user-left', { userId: user.id });
         socket.leave(room);
+        socket.currentCallId = null;
         system.info('User left call room', { context: 'webrtc', userId: user.id, conversationId });
     });
 
