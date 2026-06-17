@@ -3,7 +3,14 @@ import { io } from "socket.io-client";
 import axios from "axios";
 
 const CONVERSATION_ID = 1;
-const ICE_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
+const ICE_SERVERS = [
+    { urls: "stun:stun.l.google.com:19302" },
+    {
+        urls: "turn:openrelay.metered.ca:80",
+        username: "openrelayproject",
+        credential: "openrelayproject",
+    },
+];
 
 export default function Call() {
     const [userId, setUserId] = useState(null);
