@@ -13,6 +13,7 @@ app.use(globalLimiter);
 app.use('/api/health', require('./routes/health'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/admin', require('./routes/admin'));
+app.use('/api/auth', require('./routes/auth'));
 
 app.use((err, req, res, _next) => {
   system.error('Internal server error caught by global handler', { context: 'express', error: err.message, stack: err.stack });

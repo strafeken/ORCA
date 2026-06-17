@@ -1,6 +1,11 @@
+const http = require('http');
 const app = require('./app');
+const { initSocket } = require('./sockets/index');
 const { system } = require('./utils/winstonLogger');
 
-app.listen(3000, () => {
+const server = http.createServer(app);
+initSocket(server);
+
+server.listen(3000, () => {
   system.info('Server running on port 3000', { context: 'server' });
 });
