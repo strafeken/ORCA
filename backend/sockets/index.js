@@ -2,6 +2,7 @@ const { Server } = require('socket.io');
 const { verifyToken } = require('../utils/fakeAuth');
 const { system } = require('../utils/winstonLogger');
 const { registerChatHandlers } = require('./chat');
+const { registerWebRTCHandlers } = require('./webrtc');
 
 const initSocket = (httpServer) => {
   const io = new Server(httpServer, {
@@ -22,6 +23,7 @@ const initSocket = (httpServer) => {
   io.on('connection', (socket) => {
     system.info('Socket connected', { context: 'socket', userId: socket.user.id });
     registerChatHandlers(io, socket);
+    registerWebRTCHandlers(io, socket);
 
     socket.on('disconnect', () => {
       system.info('Socket disconnected', { context: 'socket', userId: socket.user.id });
