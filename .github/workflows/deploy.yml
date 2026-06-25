@@ -18,7 +18,7 @@ jobs:
     needs: [security-checks]
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.2.5
