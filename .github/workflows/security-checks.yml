@@ -4,7 +4,7 @@ on:
   workflow_call:
 
 jobs:
-  audit:
+  sca-npm-audit:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -23,7 +23,7 @@ jobs:
         run: npm audit --audit-level=high
         working-directory: ./frontend
 
-  sca:
+  sca-owasp-dependency-check:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -47,7 +47,7 @@ jobs:
           name: dependency-check-report
           path: reports/
 
-  sast:
+  sast-eslint-frontend:
     runs-on: ubuntu-latest
     permissions:
       security-events: write
@@ -61,7 +61,7 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: '24'
- 
+
       - name: Create reports directory
         run: mkdir -p reports
 
@@ -69,18 +69,9 @@ jobs:
         run: npm ci
         working-directory: ./frontend
 
-      - name: Install backend dependencies
-        run: npm ci
-        working-directory: ./backend
-
       - name: Run ESLint on frontend
         run: npx eslint . --format @microsoft/eslint-formatter-sarif --output-file ../reports/frontend.sarif
         working-directory: ./frontend
-        continue-on-error: true
-
-      - name: Run ESLint on backend
-        run: npx eslint . --format @microsoft/eslint-formatter-sarif --output-file ../reports/backend.sarif
-        working-directory: ./backend
         continue-on-error: true
 
       - name: Upload frontend SARIF to GitHub Security tab
@@ -90,6 +81,33 @@ jobs:
           sarif_file: reports/frontend.sarif
           category: eslint-frontend
 
+  sast-eslint-backend:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Create reports directory
+        run: mkdir -p reports
+
+      - name: Install backend dependencies
+        run: npm ci
+        working-directory: ./backend
+
+      - name: Run ESLint on backend
+        run: npx eslint . --format @microsoft/eslint-formatter-sarif --output-file ../reports/backend.sarif
+        working-directory: ./backend
+        continue-on-error: true
+
       - name: Upload backend SARIF to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v4
         if: always()
@@ -97,7 +115,7 @@ jobs:
           sarif_file: reports/backend.sarif
           category: eslint-backend
 
-  codeql:
+  sast-codeql:
     runs-on: ubuntu-latest
     permissions:
       security-events: write
@@ -117,7 +135,7 @@ jobs:
         with:
           category: codeql-javascript
 
-  gitleaks:
+  secrets-gitleaks:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
