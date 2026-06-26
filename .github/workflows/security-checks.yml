@@ -5,6 +5,7 @@ on:
 
 jobs:
   sca-npm-audit:
+    name: "SCA: npm audit"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -24,6 +25,7 @@ jobs:
         working-directory: ./frontend
 
   sca-owasp-dependency-check:
+    name: "SCA: OWASP Dependency-Check"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -48,6 +50,7 @@ jobs:
           path: reports/
 
   sast-eslint-frontend:
+    name: "SAST: ESLint Frontend"
     runs-on: ubuntu-latest
     permissions:
       security-events: write
@@ -82,6 +85,7 @@ jobs:
           category: eslint-frontend
 
   sast-eslint-backend:
+    name: "SAST: ESLint Backend"
     runs-on: ubuntu-latest
     permissions:
       security-events: write
@@ -116,6 +120,7 @@ jobs:
           category: eslint-backend
 
   sast-codeql:
+    name: "SAST: CodeQL"
     runs-on: ubuntu-latest
     permissions:
       security-events: write
@@ -136,6 +141,7 @@ jobs:
           category: codeql-javascript
 
   sast-sonarqube:
+    name: "SAST: SonarQube"
     runs-on: [self-hosted, ec2]
     steps:
       - name: Checkout code
@@ -177,6 +183,7 @@ jobs:
           SONAR_HOST_URL: http://localhost:9000
 
   secrets-gitleaks:
+    name: "Secrets: Gitleaks"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
