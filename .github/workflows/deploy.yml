@@ -5,7 +5,11 @@ on:
     branches: [main]
 
 jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+
   security-checks:
+    needs: [build]
     uses: ./.github/workflows/security-checks.yml
     secrets: inherit
     permissions:
@@ -14,8 +18,8 @@ jobs:
       contents: read
 
   deploy:
-    runs-on: ubuntu-latest
     needs: [security-checks]
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
