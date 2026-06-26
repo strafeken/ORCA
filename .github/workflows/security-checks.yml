@@ -135,6 +135,47 @@ jobs:
         with:
           category: codeql-javascript
 
+  sast-sonarqube:
+    runs-on: [self-hosted, ec2]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: ./frontend
+
+      - name: Install backend dependencies
+        run: npm ci
+        working-directory: ./backend
+
+      - name: SonarQube scan - Frontend
+        uses: sonarsource/sonarqube-scan-action@v8.2.0
+        with:
+          projectBaseDir: ./frontend
+          args: >
+            -Dsonar.qualitygate.wait=true
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: http://localhost:9000
+
+      - name: SonarQube scan - Backend
+        uses: sonarsource/sonarqube-scan-action@v8.2.0
+        with:
+          projectBaseDir: ./backend
+          args: >
+            -Dsonar.qualitygate.wait=true
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: http://localhost:9000
+
   secrets-gitleaks:
     runs-on: ubuntu-latest
     steps:
