@@ -1,0 +1,23 @@
+# Never copy these from the host into the Docker image.
+node_modules
+
+# Secrets must never enter an image.
+.env
+.env.*
+!.env.example
+
+# Logs and local cruft
+logs
+npm-debug.log*
+*.log
+
+# Git / CI / editor
+.git
+.gitignore
+.github
+.dockerignore
+.vscode
+.idea
+
+# Generated/seed artifacts that shouldn't be baked in
+db/seed.generated.sql

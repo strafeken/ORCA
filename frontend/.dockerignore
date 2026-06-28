@@ -1,0 +1,22 @@
+# Never copy these from the host into the Docker image.
+node_modules
+
+# Build output — regenerated inside the image by `npm run build`.
+dist
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Logs and local cruft
+npm-debug.log*
+*.log
+
+# Git / CI / editor
+.git
+.gitignore
+.github
+.dockerignore
+.vscode
+.idea
