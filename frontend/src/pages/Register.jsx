@@ -1,23 +1,84 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { OrcaWordmark } from "../components/Brand";
+import { apiFetch } from "../auth/api";
 
 /**
- * Register page — not yet wired.
+ * Register page — wired to POST /api/auth/register.
  *
- * The form fields and role choice are laid out (name, email, password, role).
- * The submit currently does nothing but show a notice. To finish it:
- *   - POST /api/auth/register (hash the password server-side)
- *   - Worker -> email verification before activation
- *   - Expert -> admin approval before access; land on /verify-pending
+ * On success the backend returns 202 with a generic message (it never reveals
+ * whether the email was already taken). We show a success panel telling the
+ * user what happens next based on the role they chose:
+ *   - worker -> verify email
+ *   - expert -> await admin approval
  */
 export default function Register() {
   const [role, setRole] = useState("worker");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [done, setDone] = useState(false);
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
-    // TODO: implement registration (POST /api/auth/register).
-    alert("Account creation isn't available yet.");
+    setError(null);
+
+    // Light client-side checks for fast feedback; the server validates too.
+    if (!name.trim()) return setError("Please enter your name.");
+    if (!email.trim()) return setError("Please enter your email.");
+    if (password.length < 12) return setError("Password must be at least 12 characters.");
+
+    setLoading(true);
+    try {
+      const res = await apiFetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim(), email: email.trim(), password, role }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || "Registration failed. Please try again.");
+      }
+      setDone(true);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Success panel
+  if (done) {
+    return (
+      <div style={s.wrap}>
+        <header style={s.top}>
+          <Link to="/" style={{ textDecoration: "none" }}>
+            <OrcaWordmark />
+          </Link>
+        </header>
+        <main style={s.center}>
+          <div style={s.card}>
+            <h1 style={s.h1}>Almost there</h1>
+            {role === "worker" ? (
+              <p style={s.sub}>
+                We've sent a verification link to <strong>{email}</strong>. Click it to activate
+                your account, then sign in.
+              </p>
+            ) : (
+              <p style={s.sub}>
+                Your expert account has been created and is awaiting admin approval. You'll be
+                able to sign in once an admin approves it.
+              </p>
+            )}
+            <Link to="/login" className="orca-btn orca-btn--primary orca-btn--block">
+              Go to sign in
+            </Link>
+          </div>
+        </main>
+      </div>
+    );
   }
 
   return (
@@ -36,22 +97,44 @@ export default function Register() {
             before access is granted.
           </p>
 
+          {error && (
+            <div className="orca-alert" role="alert">
+              {error}
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} noValidate>
             <div className="orca-field">
               <label htmlFor="name">Full name</label>
-              <input id="name" type="text" placeholder="Jane Smith" autoComplete="name" />
+              <input
+                id="name"
+                type="text"
+                placeholder="Jane Smith"
+                autoComplete="name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
             </div>
             <div className="orca-field">
               <label htmlFor="email">Email</label>
-              <input id="email" type="email" placeholder="you@orca.com" autoComplete="email" />
+              <input
+                id="email"
+                type="email"
+                placeholder="you@orca.com"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
             </div>
             <div className="orca-field">
               <label htmlFor="password">Password</label>
               <input
                 id="password"
                 type="password"
-                placeholder="••••••••"
+                placeholder="At least 12 characters"
                 autoComplete="new-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
               />
             </div>
 
@@ -78,8 +161,12 @@ export default function Register() {
               </div>
             </div>
 
-            <button type="submit" className="orca-btn orca-btn--primary orca-btn--block">
-              Create account
+            <button
+              type="submit"
+              className="orca-btn orca-btn--primary orca-btn--block"
+              disabled={loading}
+            >
+              {loading ? "Creating…" : "Create account"}
             </button>
           </form>
 

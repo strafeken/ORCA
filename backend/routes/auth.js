@@ -11,6 +11,11 @@ const {
 } = require('../utils/authService');
 const { authLimiter, adminAuthLimiter } = require('../middleware/authRateLimiter');
 const { system, audit } = require('../utils/winstonLogger');
+const { issueToken } = require('../utils/oneTimeTokens');
+const { sendActionEmail } = require('../utils/mailer');
+const { hasTotp, verifyTotp } = require('../utils/totp');
+
+const APP_URL = process.env.APP_URL || 'http://localhost';
 
 /**
  * Auth routes.
@@ -102,6 +107,24 @@ router.post('/register', authLimiter, async (req, res) => {
         [name, email, passwordHash, role, isVerified, isApproved]
       );
       audit.log({ userId: result.insertId, actionType: 'register', resourceType: 'user', ip: req.ip });
+
+      // Issue an email-verification token and send the link. Failure to send
+      // must not fail registration (the mailer logs a fallback), so this is
+      // best-effort and wrapped separately.
+      try {
+        const token = await issueToken('verification', result.insertId);
+        const link = `${APP_URL}/verify-email?token=${token}`;
+        await sendActionEmail({
+          to: email,
+          subject: 'Verify your ORCA account',
+          heading: 'Confirm your email',
+          body: `Hi ${name}, please confirm your email address to activate your account.`,
+          link,
+          buttonText: 'Verify email',
+        });
+      } catch (mailErr) {
+        system.error('Failed to issue/send verification email', { context: 'auth', error: mailErr.message });
+      }
     } catch (err) {
       if (err.code === 'ER_DUP_ENTRY') {
         // Same response shape as success — don't reveal the email is taken.
@@ -160,6 +183,22 @@ async function handleLogin(req, res, { adminOnly }) {
     if (!adminOnly && user.role === 'admin') {
       audit.log({ userId: user.id, actionType: 'admin_used_public_login', ip: req.ip });
       return res.status(401).json({ error: GENERIC_LOGIN_ERROR });
+    }
+
+    // Second factor: if this account has TOTP enabled, a valid 6-digit code
+    // must accompany the login. We only reach here AFTER the password is
+    // correct, so prompting for a code doesn't leak account information.
+    if (await hasTotp(user.id)) {
+      const { totp } = req.body;
+      if (!totp) {
+        // Tell the client a code is required, without issuing a session.
+        return res.status(401).json({ error: 'TOTP code required.', totpRequired: true });
+      }
+      const totpOk = await verifyTotp(user.id, totp);
+      if (!totpOk) {
+        audit.log({ userId: user.id, actionType: 'totp_failed', ip: req.ip });
+        return res.status(401).json({ error: 'Invalid TOTP code.', totpRequired: true });
+      }
     }
 
     const { accessToken, refreshToken } = await createSession(user, clientMeta(req));

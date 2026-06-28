@@ -52,27 +52,35 @@ export function AuthProvider({ children }) {
 
   /**
    * Real login. Calls POST /api/auth/login. On success the backend returns
-   * { token, refreshToken, user }. We never reveal which field was wrong —
-   * the backend already sends a single generic message, and we surface it as-is.
+   * { token, refreshToken, user }. If the account has 2FA enabled and no/invalid
+   * code was supplied, the backend returns { totpRequired: true } — we throw a
+   * special error the Login page catches to prompt for a code.
    */
   const login = useCallback(
-    async (email, password) => {
+    async (email, password, totp) => {
       setLoading(true);
       setError(null);
       try {
         const res = await apiFetch("/api/auth/login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password }),
+          body: JSON.stringify({ email, password, totp }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
+          // Signal the UI to ask for a TOTP code rather than showing an error.
+          if (data.totpRequired) {
+            const e = new Error(data.error || "TOTP code required.");
+            e.totpRequired = true;
+            throw e;
+          }
           throw new Error(data.error || "Email or password is incorrect.");
         }
         persist(data.token, data.refreshToken);
         return data;
       } catch (err) {
-        setError(err.message || "Login failed.");
+        // Don't show the "TOTP required" as a red error — the page handles it.
+        if (!err.totpRequired) setError(err.message || "Login failed.");
         throw err;
       } finally {
         setLoading(false);
