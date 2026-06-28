@@ -1,5 +1,5 @@
 const { Server } = require('socket.io');
-const { verifyToken } = require('../utils/fakeAuth');
+const { verifyToken } = require('../utils/tokens');
 const { system } = require('../utils/winstonLogger');
 const { registerChatHandlers } = require('./chat');
 const { registerWebRTCHandlers } = require('./webrtc');

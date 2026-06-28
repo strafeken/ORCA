@@ -1,12 +1,13 @@
 USE orca_db;
 
 -- Users (2 workers, 2 experts, 1 admin)
+-- Demo passwords (dev only): workers = WorkerPass123!, experts = ExpertPass123!, admin = AdminPass123!
 INSERT INTO users (name, email, contact_number, bio, password_hash, role, is_verified, is_approved, created_at, updated_at) VALUES
-('John Doe', 'john@orca.com', '91234567', 'Structural engineer with 10 years experience.', '$argon2id$v=19$m=65536,t=3,p=4$placeholder1', 'worker', TRUE, TRUE, NOW(), NOW()),
-('Jane Smith', 'jane@orca.com', '92345678', 'Site safety officer.', '$argon2id$v=19$m=65536,t=3,p=4$placeholder2', 'worker', TRUE, TRUE, NOW(), NOW()),
-('Bob Chen', 'bob@orca.com', '93456789', 'Civil engineering expert specializing in foundations.', '$argon2id$v=19$m=65536,t=3,p=4$placeholder3', 'expert', TRUE, TRUE, NOW(), NOW()),
-('Alice Tan', 'alice@orca.com', '94567890', 'Mechanical systems expert.', '$argon2id$v=19$m=65536,t=3,p=4$placeholder4', 'expert', TRUE, TRUE, NOW(), NOW()),
-('Admin User', 'admin@orca.com', '95678901', NULL, '$argon2id$v=19$m=65536,t=3,p=4$placeholder5', 'admin', TRUE, TRUE, NOW(), NOW());
+('John Doe', 'john@orca.com', '91234567', 'Structural engineer with 10 years experience.', '$argon2id$v=19$m=65536,t=3,p=4$l8KXkzfX4g3uFcZkgWVndA$DTQEuAmG90Q6zKuAuwMZy59bkKsCdeVN17o+mwavsaQ', 'worker', TRUE, TRUE, NOW(), NOW()),
+('Jane Smith', 'jane@orca.com', '92345678', 'Site safety officer.', '$argon2id$v=19$m=65536,t=3,p=4$xr0y9JSNibFCHgvFnZ2dSg$yaLa85oyIlD6iosnwwZcJl5gS3owbY2PI3IDwGkvpjY', 'worker', TRUE, TRUE, NOW(), NOW()),
+('Bob Chen', 'bob@orca.com', '93456789', 'Civil engineering expert specializing in foundations.', '$argon2id$v=19$m=65536,t=3,p=4$u7juasnZFt+wI6DnnCTr5w$BexYIufI1bpYqUvy6zkNiFBLHnWXI/OVFhJG1S5MmE8', 'expert', TRUE, TRUE, NOW(), NOW()),
+('Alice Tan', 'alice@orca.com', '94567890', 'Mechanical systems expert.', '$argon2id$v=19$m=65536,t=3,p=4$Mb7tMiAPkjVEdgN60nrzmA$6xP5uZ5KuHNEBXfLgU0eYeiQI/zM9O2NXuRGHCVrKh4', 'expert', TRUE, TRUE, NOW(), NOW()),
+('Admin User', 'admin@orca.com', '95678901', NULL, '$argon2id$v=19$m=65536,t=3,p=4$Z6sqrerbxgj3pxa5WSYL5w$j+FFCrwQtqekftv77ITpTXlUxCbZhYwMT3oKlIU3M9U', 'admin', TRUE, TRUE, NOW(), NOW());
 
 -- Conversations
 INSERT INTO conversations (worker_id, expert_id, created_at, updated_at) VALUES

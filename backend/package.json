@@ -7,14 +7,18 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "argon2": "^0.44.0",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "express-rate-limit": "^8.5.2",
     "jsonwebtoken": "^9.0.3",
     "morgan": "^1.11.0",
     "mysql2": "^3.6.0",
+    "nodemailer": "^9.0.1",
+    "qrcode": "^1.5.4",
     "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3",
+    "speakeasy": "^2.0.0",
     "winston": "^3.19.0",
     "winston-loki": "^6.1.4"
   },
