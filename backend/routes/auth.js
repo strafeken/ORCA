@@ -41,7 +41,10 @@ function clientMeta(req) {
 }
 
 function isValidEmail(email) {
-  return typeof email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  // Linear-time validation (no backtracking) to avoid ReDoS. We cap the length
+  // first, then use a bounded character-class regex with no nested quantifiers.
+  if (typeof email !== 'string' || email.length > 254) return false;
+  return /^[^\s@]{1,64}@[^\s@]{1,255}\.[^\s@]{1,255}$/.test(email);
 }
 
 /**
