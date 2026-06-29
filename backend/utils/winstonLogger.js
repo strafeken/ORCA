@@ -2,7 +2,7 @@ const { createLogger, format, transports } = require('winston');
 const LokiTransport = require('winston-loki');
 const { sanitizeLog } = require('./sanitize');
 
-const lokiUrl = process.env.LOKI_URL || 'http://loki:3100';
+const lokiUrl = process.env.LOKI_URL;
 
 // System logger - logs to stdout (Alloy picks this up) AND pushes to Loki
 const systemLogger = createLogger({

@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 
-const LOKI_URL = process.env.LOKI_URL || 'http://loki:3100';
+const LOKI_URL = process.env.LOKI_URL;
 
 router.get('/logs', async (req, res) => {
   const { job = '', level = '', search = '', range = '1h' } = req.query;
