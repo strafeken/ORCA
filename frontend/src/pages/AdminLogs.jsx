@@ -1,267 +1,700 @@
-import { useEffect, useState, useCallback, useMemo, useRef } from "react";
-import axios from "axios";
+import { useEffect, useState, useMemo, useCallback } from "react";
+import { apiFetch } from "../auth/api";
 
-// Native Map structures bypass object injection AST checks completely
-const LEVEL_STYLES = new Map([
-  ["info", { background: "#E6F1FB", color: "#0C447C" }],
-  ["warn", { background: "#FAEEDA", color: "#633806" }],
-  ["error", { background: "#FCEBEB", color: "#791F1F" }],
-]);
-
-const JOB_STYLES = new Map([
-  ["audit", { background: "#FAEEDA", color: "#633806" }],
-  ["system", { background: "#F1EFE8", color: "#444441" }],
-]);
-
-const DEFAULT_STYLE = { background: "#F1EFE8", color: "#444441" };
-const PAGE_SIZE = 15; // Restored the missing variable definition
-
-function Badge({ label, styleMap }) {
-  const s = styleMap.get(label) || DEFAULT_STYLE;
-
-  return (
-    <span style={{
-      ...s,
-      fontSize: 11,
-      padding: "2px 8px",
-      borderRadius: 100,
-      fontWeight: 500,
-      display: "inline-block",
-      whiteSpace: "nowrap",
-    }}>
-      {label}
-    </span>
-  );
-}
-
+/**
+ * AdminLogs — mounted at /adm/logs.
+ *
+ * Displays the full append-only audit and system event trail pulled from
+ * Loki via GET /api/admin/logs. Satisfies:
+ *
+ *   SR-29 — Audit records include userId, actionType, timestamp, IP and resource.
+ *   SR-30 — Logs are read from the append-only Loki store; no modification is
+ *            possible from this UI (the backend has no delete-log endpoint).
+ *   FR-12 — Every admin read / delete of a chat log is surfaced here.
+ *
+ * Features:
+ *   • Tab switcher: "Audit" (job=audit) | "System" (job=system) | "All"
+ *   • Live search (text filter applied client-side after fetch)
+ *   • Time-range selector: 15 m / 1 h / 6 h / 24 h / 7 d
+ *   • Action-type filter populated from the current result set
+ *   • Level badge: colour-coded info / warn / error
+ *   • Expandable row showing the full JSON payload
+ *   • Refresh button (manual) + last-fetched timestamp
+ *   • Empty / error / loading states
+ *
+ * The component is intentionally read-only — admins cannot delete log
+ * entries from this UI, keeping the store append-only per SR-30.
+ */
 export default function AdminLogs() {
-  const [logs, setLogs] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [tab, setTab] = useState("all");
-  const [level, setLevel] = useState("");
-  const [search, setSearch] = useState("");
-  const [range, setRange] = useState("1h");
-  const [page, setPage] = useState(1);
-  const [lastRefresh, setLastRefresh] = useState(null);
-  
-  const isMounted = useRef(false);
+  // ── Fetch state ────────────────────────────────────────────────────
+  const [logs, setLogs]         = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [error, setError]       = useState(null);
+  const [lastFetched, setLastFetched] = useState(null);
 
+  // ── Filter controls ────────────────────────────────────────────────
+  const [tab, setTab]           = useState("audit");   // "audit" | "system" | "all"
+  const [range, setRange]       = useState("1h");
+  const [search, setSearch]     = useState("");
+  const [actionFilter, setActionFilter] = useState("all");
+
+  // ── Expanded rows ──────────────────────────────────────────────────
+  const [expanded, setExpanded] = useState(new Set());
+
+  // ── Fetch ──────────────────────────────────────────────────────────
   const fetchLogs = useCallback(() => {
-    const params = { range };
-    if (tab !== 'all') params.job = tab;
-    
-    axios.get("/api/admin/logs", { params })
-      .then(res => {
-        setLogs(res.data.logs || []);
-        setError(null); // Clear errors safely within the async response handler
-        setLastRefresh(new Date());
+    setLoading(true);
+    setError(null);
+
+    const job = tab === "all" ? "" : tab;
+    const params = new URLSearchParams({ job, range });
+
+    apiFetch(`/api/admin/logs?${params}`)
+      .then((r) => {
+        if (!r.ok) throw new Error(`Server returned ${r.status}`);
+        return r.json();
       })
-      .catch(err => setError(err.message))
+      .then((d) => {
+        setLogs(d.logs || []);
+        setLastFetched(new Date());
+        setExpanded(new Set()); // collapse all on refresh
+      })
+      .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [range, tab]);
+  }, [tab, range]);
 
-  // Use a clean scheduling mechanism to trigger the initial layout synchronization safely
+  // Fetch whenever tab or range changes.
   useEffect(() => {
-    if (!isMounted.current) {
-      isMounted.current = true;
-    } else {
-      setLoading(true);
-    }
-
-    // Queue execution asynchronously to decouple it from the immediate render cycle execution block
-    const handler = setTimeout(() => {
-      fetchLogs();
-    }, 0);
-
-    return () => clearTimeout(handler);
+    fetchLogs();
   }, [fetchLogs]);
 
-  const handleTabChange = (newTab) => {
-    setTab(newTab);
-    setPage(1);
-  };
+  // Reset action filter when tab or range changes (stale action types).
+  useEffect(() => {
+    setActionFilter("all");
+  }, [tab, range]);
 
-  const handleLevelChange = (e) => {
-    setLevel(e.target.value);
-    setPage(1);
-  };
+  // ── Derived data ───────────────────────────────────────────────────
 
-  const handleSearchChange = (e) => {
-    setSearch(e.target.value);
-    setPage(1);
-  };
+  // Unique action types present in the current result set (audit tab only).
+  const actionTypes = useMemo(() => {
+    const types = new Set();
+    logs.forEach((l) => { if (l.actionType) types.add(l.actionType); });
+    return ["all", ...Array.from(types).sort()];
+  }, [logs]);
 
-  const handleRangeChange = (e) => {
-    setRange(e.target.value);
-    setPage(1);
-  };
-
+  // Apply client-side text search + action filter.
   const filtered = useMemo(() => {
     let result = [...logs];
-    if (tab !== "all") result = result.filter(l => l.job === tab);
-    if (level) result = result.filter(l => l.level === level);
-    if (search) result = result.filter(l =>
-      l.msg.toLowerCase().includes(search.toLowerCase()) ||
-      l.ip.toLowerCase().includes(search.toLowerCase())
-    );
+
+    if (actionFilter !== "all") {
+      result = result.filter((l) => l.actionType === actionFilter);
+    }
+
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      result = result.filter((l) =>
+        (l.msg        || "").toLowerCase().includes(q) ||
+        (l.actionType || "").toLowerCase().includes(q) ||
+        (l.userId     != null && String(l.userId).includes(q)) ||
+        (l.resourceId != null && String(l.resourceId).includes(q)) ||
+        (l.ip         || "").toLowerCase().includes(q)
+      );
+    }
+
     return result;
-  }, [logs, tab, level, search]);
+  }, [logs, search, actionFilter]);
 
-  const metrics = {
-    total: logs.length,
-    audit: logs.filter(l => l.job === "audit").length,
-    errors: logs.filter(l => l.level === "error").length,
-    ips: new Set(logs.map(l => l.ip).filter(ip => ip !== "—")).size,
-  };
+  // ── Toggle row expansion ───────────────────────────────────────────
+  function toggleRow(idx) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      next.has(idx) ? next.delete(idx) : next.add(idx);
+      return next;
+    });
+  }
 
-  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
-  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  // ── Helpers ────────────────────────────────────────────────────────
+  function fmtTs(iso) {
+    if (!iso) return "—";
+    const d = new Date(iso);
+    return d.toLocaleString(undefined, {
+      month: "short", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+      hour12: false,
+    });
+  }
 
-  const styles = {
-    page: { padding: "2rem", fontFamily: "sans-serif", maxWidth: 1100, margin: "0 auto" },
-    header: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "1.5rem" },
-    title: { fontSize: 20, fontWeight: 500, margin: 0 },
-    subtitle: { fontSize: 13, color: "#888", margin: "4px 0 0" },
-    metrics: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: "1.5rem" },
-    metric: { background: "#f5f5f3", borderRadius: 8, padding: "1rem" },
-    metricLabel: { fontSize: 11, color: "#888", margin: "0 0 6px", textTransform: "uppercase", letterSpacing: "0.04em" },
-    metricValue: { fontSize: 24, fontWeight: 500, margin: 0 },
-    tabs: { display: "flex", borderBottom: "0.5px solid #e0e0e0", marginBottom: "1rem" },
-    tab: (active) => ({
-      padding: "8px 16px", fontSize: 13, cursor: "pointer",
-      background: "none", border: "none",
-      borderBottom: active ? "2px solid #222" : "2px solid transparent",
-      fontWeight: active ? 500 : 400,
-      color: active ? "#222" : "#888",
-    }),
-    controls: { display: "flex", gap: 8, marginBottom: "1rem", flexWrap: "wrap" },
-    select: { fontSize: 13, padding: "6px 10px", borderRadius: 8, height: 32, border: "0.5px solid #ddd" },
-    input: { fontSize: 13, padding: "6px 10px", borderRadius: 8, height: 32, border: "0.5px solid #ddd", width: 200 },
-    tableWrap: { border: "0.5px solid #e0e0e0", borderRadius: 12, overflow: "auto" },
-    table: { width: "100%", borderCollapse: "collapse", fontSize: 13 },
-    th: { textAlign: "left", padding: "8px 12px", color: "#888", fontWeight: 400, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em", borderBottom: "0.5px solid #e0e0e0" },
-    td: { padding: "10px 12px", borderBottom: "0.5px solid #f0f0f0", verticalAlign: "middle", maxWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-    mono: { fontFamily: "monospace", fontSize: 12 },
-    muted: { color: "#888" },
-    btn: { fontSize: 13, padding: "6px 12px", borderRadius: 8, cursor: "pointer", border: "0.5px solid #ddd", background: "white", height: 32 },
-    pagination: { display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "1rem", fontSize: 13, color: "#888" },
-    refreshBtn: { display: "flex", alignItems: "center", gap: 6, fontSize: 13, padding: "6px 12px", borderRadius: 8, cursor: "pointer", border: "0.5px solid #ddd", background: "white", height: 32 },
-  };
-
+  // ── Render ─────────────────────────────────────────────────────────
   return (
-    <div style={styles.page}>
-      <div style={styles.header}>
+    <div style={s.page}>
+      {/* ── Page header ───────────────────────────────────────── */}
+      <div style={s.header}>
         <div>
-          <h1 style={styles.title}>Log dashboard</h1>
-          <p style={styles.subtitle}>
-            {lastRefresh ? `Last refreshed ${lastRefresh.toLocaleTimeString()}` : "Loading..."}
+          <h1 style={s.title}>Audit &amp; System Logs</h1>
+          <p style={s.subtitle}>
+            Append-only security and event trail via Loki · read-only (SR-30)
           </p>
         </div>
-        <button style={styles.refreshBtn} onClick={() => { setLoading(true); fetchLogs(); }} disabled={loading}>
-          ↻ {loading ? "Refreshing..." : "Refresh"}
-        </button>
-      </div>
-
-      <div style={styles.metrics}>
-        <div style={styles.metric}>
-          <p style={styles.metricLabel}>Total logs</p>
-          <p style={styles.metricValue}>{metrics.total}</p>
-        </div>
-        <div style={styles.metric}>
-          <p style={styles.metricLabel}>Security events</p>
-          <p style={{ ...styles.metricValue, color: "#854F0B" }}>{metrics.audit}</p>
-        </div>
-        <div style={styles.metric}>
-          <p style={styles.metricLabel}>Errors</p>
-          <p style={{ ...styles.metricValue, color: "#A32D2D" }}>{metrics.errors}</p>
-        </div>
-        <div style={styles.metric}>
-          <p style={styles.metricLabel}>Unique IPs</p>
-          <p style={styles.metricValue}>{metrics.ips}</p>
+        <div style={s.headerRight}>
+          {lastFetched && (
+            <span style={s.lastFetched}>
+              Last fetched {lastFetched.toLocaleTimeString(undefined, { hour12: false })}
+            </span>
+          )}
+          <button style={s.refreshBtn} onClick={fetchLogs} disabled={loading}>
+            {loading ? "Loading…" : "⟳ Refresh"}
+          </button>
         </div>
       </div>
 
-      <div style={styles.tabs}>
-        {[["all", "All logs"], ["audit", "Security events"], ["system", "System logs"]].map(([key, label]) => (
-          <button key={key} style={styles.tab(tab === key)} onClick={() => handleTabChange(key)}>{label}</button>
+      {/* ── Tab bar ───────────────────────────────────────────── */}
+      <div style={s.tabBar}>
+        {[
+          { key: "audit",  label: "📋 Audit Events"  },
+          { key: "system", label: "⚙️ System Logs"    },
+          { key: "all",    label: "🔍 All"             },
+        ].map(({ key, label }) => (
+          <button
+            key={key}
+            style={{
+              ...s.tab,
+              ...(tab === key ? s.tabActive : {}),
+            }}
+            onClick={() => setTab(key)}
+          >
+            {label}
+          </button>
         ))}
       </div>
 
-      <div style={styles.controls}>
-        <select style={styles.select} value={level} onChange={handleLevelChange}>
-          <option value="">All levels</option>
-          <option value="info">Info</option>
-          <option value="warn">Warn</option>
-          <option value="error">Error</option>
-        </select>
+      {/* ── Filter bar ────────────────────────────────────────── */}
+      <div style={s.filterBar}>
+        {/* Text search */}
         <input
-          style={styles.input}
-          placeholder="Search logs..."
+          type="search"
+          placeholder="Search message, action, user ID, IP…"
           value={search}
-          onChange={handleSearchChange}
+          onChange={(e) => setSearch(e.target.value)}
+          style={s.searchInput}
+          aria-label="Search logs"
         />
-        <select style={styles.select} value={range} onChange={handleRangeChange}>
+
+        {/* Action type filter (audit only) */}
+        {tab !== "system" && (
+          <select
+            value={actionFilter}
+            onChange={(e) => setActionFilter(e.target.value)}
+            style={s.select}
+            aria-label="Filter by action type"
+          >
+            {actionTypes.map((a) => (
+              <option key={a} value={a}>
+                {a === "all" ? "All action types" : a}
+              </option>
+            ))}
+          </select>
+        )}
+
+        {/* Time range */}
+        <select
+          value={range}
+          onChange={(e) => setRange(e.target.value)}
+          style={s.select}
+          aria-label="Time range"
+        >
+          <option value="15m">Last 15 min</option>
           <option value="1h">Last 1 hour</option>
           <option value="6h">Last 6 hours</option>
           <option value="24h">Last 24 hours</option>
+          <option value="7d">Last 7 days</option>
         </select>
+
+        {/* Result count */}
+        <span style={s.resultCount}>
+          {loading ? "…" : `${filtered.length} of ${logs.length} entries`}
+        </span>
       </div>
 
+      {/* ── Error banner ──────────────────────────────────────── */}
       {error && (
-        <div style={{ background: "#FCEBEB", color: "#791F1F", padding: "10px 14px", borderRadius: 8, marginBottom: "1rem", fontSize: 13 }}>
-          Failed to fetch logs: {error}. Is Loki running?
+        <div style={s.errorBanner} role="alert">
+          <strong>Failed to load logs</strong> — {error}
+          <button style={s.retryLink} onClick={fetchLogs}>Retry</button>
         </div>
       )}
 
-      <div style={styles.tableWrap}>
-        <table style={styles.table}>
-          <thead>
-            <tr>
-              <th style={{ ...styles.th, width: 160 }}>Timestamp</th>
-              <th style={{ ...styles.th, width: 70 }}>Level</th>
-              <th style={{ ...styles.th, width: 90 }}>Type</th>
-              <th style={styles.th}>Message</th>
-              <th style={{ ...styles.th, width: 120 }}>IP</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr><td colSpan={5} style={{ ...styles.td, textAlign: "center", color: "#888", padding: "2rem" }}>Loading logs...</td></tr>
-            ) : paginated.length === 0 ? (
-              <tr><td colSpan={5} style={{ ...styles.td, textAlign: "center", color: "#888", padding: "2rem" }}>No logs match your filters.</td></tr>
-            ) : paginated.map((log, i) => (
-              <tr key={i}>
-                <td style={{ ...styles.td, ...styles.mono, ...styles.muted, width: 160 }}>
-                  {new Date(log.ts).toLocaleString()}
-                </td>
-                <td style={{ ...styles.td, width: 70 }}>
-                  <Badge label={log.level} styleMap={LEVEL_STYLES} />
-                </td>
-                <td style={{ ...styles.td, width: 90 }}>
-                  <Badge label={log.job} styleMap={JOB_STYLES} />
-                </td>
-                <td style={{ ...styles.td, ...styles.mono }} title={log.msg}>
-                  {log.msg}
-                </td>
-                <td style={{ ...styles.td, ...styles.mono, ...styles.muted, width: 120 }}>
-                  {log.ip}
-                </td>
+      {/* ── Log table ─────────────────────────────────────────── */}
+      <div style={s.tableWrapper}>
+        {loading && !logs.length ? (
+          <div style={s.emptyState}>Loading logs…</div>
+        ) : !filtered.length ? (
+          <div style={s.emptyState}>
+            {logs.length
+              ? "No entries match the current filters."
+              : "No log entries found for this time range."}
+          </div>
+        ) : (
+          <table style={s.table} aria-label="Log entries">
+            <thead>
+              <tr>
+                <th style={{ ...s.th, width: 155 }}>Timestamp</th>
+                <th style={{ ...s.th, width: 58  }}>Level</th>
+                {tab !== "audit" && (
+                  <th style={{ ...s.th, width: 70 }}>Job</th>
+                )}
+                {tab !== "system" && (
+                  <>
+                    <th style={{ ...s.th, width: 220 }}>Action / Message</th>
+                    <th style={{ ...s.th, width: 72  }}>User ID</th>
+                    <th style={{ ...s.th, width: 90  }}>Resource</th>
+                    <th style={{ ...s.th, width: 110 }}>IP</th>
+                  </>
+                )}
+                {tab === "system" && (
+                  <th style={s.th}>Message</th>
+                )}
+                <th style={{ ...s.th, width: 40, textAlign: "center" }}>
+                  ↕
+                </th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div style={styles.pagination}>
-        <span>
-          {filtered.length === 0 ? "No results" : `Showing ${((page - 1) * PAGE_SIZE) + 1}–${Math.min(page * PAGE_SIZE, filtered.length)} of ${filtered.length}`}
-        </span>
-        <div style={{ display: "flex", gap: 4 }}>
-          <button style={styles.btn} onClick={() => setPage(p => p - 1)} disabled={page === 1}>← Prev</button>
-          <button style={styles.btn} onClick={() => setPage(p => p + 1)} disabled={page >= totalPages}>Next →</button>
-        </div>
+            </thead>
+            <tbody>
+              {filtered.map((log, idx) => (
+                <LogRow
+                  key={idx}
+                  log={log}
+                  idx={idx}
+                  tab={tab}
+                  expanded={expanded.has(idx)}
+                  onToggle={toggleRow}
+                  fmtTs={fmtTs}
+                />
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   );
 }
+
+/* ── Log row component ──────────────────────────────────────────────── */
+
+/**
+ * A single table row.  Clicking the expand button in the last column shows
+ * the full JSON payload for that log entry, useful when debugging or
+ * investigating an incident.
+ */
+function LogRow({ log, idx, tab, expanded, onToggle, fmtTs }) {
+  const colSpan = tab === "all" ? 8 : tab === "audit" ? 7 : 4;
+
+  return (
+    <>
+      <tr
+        style={{
+          ...s.tr,
+          background: expanded
+            ? "rgba(255,179,35,0.05)"
+            : idx % 2 === 0
+            ? "transparent"
+            : "rgba(255,255,255,0.015)",
+        }}
+      >
+        {/* Timestamp */}
+        <td style={{ ...s.td, fontVariantNumeric: "tabular-nums", fontSize: 11.5 }}>
+          {fmtTs(log.ts)}
+        </td>
+
+        {/* Level badge */}
+        <td style={s.td}>
+          <LevelBadge level={log.level} />
+        </td>
+
+        {/* Job column (all / system tabs) */}
+        {tab !== "audit" && (
+          <td style={{ ...s.td, fontSize: 11 }}>
+            <span style={{
+              ...s.jobPill,
+              background: log.job === "audit" ? "#2e1d5e" : "#1a2e3b",
+              color:      log.job === "audit" ? "#b39ddb" : "#64b5f6",
+              border:     `1px solid ${log.job === "audit" ? "#4a3270" : "#1e4a6e"}`,
+            }}>
+              {log.job || "system"}
+            </span>
+          </td>
+        )}
+
+        {/* Audit-specific columns */}
+        {tab !== "system" && (
+          <>
+            <td style={{ ...s.td, maxWidth: 220 }}>
+              {log.actionType
+                ? <ActionBadge action={log.actionType} />
+                : <span style={s.msgText}>{log.msg || "—"}</span>
+              }
+            </td>
+            <td style={{ ...s.td, fontSize: 11.5, color: "var(--orca-muted)" }}>
+              {log.userId ?? "—"}
+            </td>
+            <td style={{ ...s.td, fontSize: 11.5 }}>
+              {log.resourceType
+                ? (
+                  <span style={s.resourceCell}>
+                    <span style={s.resourceType}>{log.resourceType}</span>
+                    {log.resourceId != null && (
+                      <span style={s.resourceId}>#{log.resourceId}</span>
+                    )}
+                  </span>
+                )
+                : "—"
+              }
+            </td>
+            <td style={{ ...s.td, fontSize: 11, fontVariantNumeric: "tabular-nums",
+              color: "var(--orca-muted)", maxWidth: 110, overflow: "hidden",
+              textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {log.ip || "—"}
+            </td>
+          </>
+        )}
+
+        {/* System message column */}
+        {tab === "system" && (
+          <td style={{ ...s.td, maxWidth: 500 }}>
+            <span style={s.msgText}>{log.msg || "—"}</span>
+          </td>
+        )}
+
+        {/* Expand toggle */}
+        <td style={{ ...s.td, textAlign: "center" }}>
+          <button
+            style={s.expandBtn}
+            onClick={() => onToggle(idx)}
+            aria-label={expanded ? "Collapse entry" : "Expand entry"}
+            title={expanded ? "Collapse" : "Show full payload"}
+          >
+            {expanded ? "▲" : "▼"}
+          </button>
+        </td>
+      </tr>
+
+      {/* ── Expanded payload ─────────────────────────────────── */}
+      {expanded && (
+        <tr style={{ background: "rgba(255,179,35,0.04)" }}>
+          <td colSpan={colSpan} style={s.payloadTd}>
+            <pre style={s.payload}>
+              {JSON.stringify(log, null, 2)}
+            </pre>
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+/* ── Sub-components ─────────────────────────────────────────────────── */
+
+/** Colour-coded level pill. */
+function LevelBadge({ level }) {
+  const lv = (level || "info").toLowerCase();
+  const colours = {
+    info:  { bg: "#1a2e3b", color: "#64b5f6", border: "#1e4a6e" },
+    warn:  { bg: "#2e2400", color: "#f59e0b", border: "#6b4e00" },
+    error: { bg: "#2e0d0d", color: "#f87171", border: "#6b1a1a" },
+  };
+  const c = colours[lv] || colours.info;
+  return (
+    <span style={{
+      ...s.badge,
+      background: c.bg,
+      color: c.color,
+      border: `1px solid ${c.border}`,
+    }}>
+      {lv}
+    </span>
+  );
+}
+
+/** Colour-coded action type badge.  Destructive actions use a red tint. */
+function ActionBadge({ action }) {
+  const isDestructive = /DELETE|REVOKE|LOCK|TERMINATE/.test(action);
+  const isApproval    = /APPROVE|UNLOCK|VERIFY/.test(action);
+  const bg     = isDestructive ? "#2e0d0d" : isApproval ? "#0d2e1a" : "var(--orca-slate)";
+  const color  = isDestructive ? "#f87171" : isApproval ? "#4ade80" : "var(--orca-ink)";
+  const border = isDestructive ? "#6b1a1a" : isApproval ? "#166534" : "var(--orca-line)";
+  return (
+    <span style={{
+      ...s.actionBadge,
+      background: bg,
+      color,
+      border: `1px solid ${border}`,
+    }}>
+      {action}
+    </span>
+  );
+}
+
+/* ── Styles ─────────────────────────────────────────────────────────── */
+const s = {
+  page: {
+    maxWidth: 1180,
+    margin: "0 auto",
+  },
+
+  /* Header */
+  header: {
+    display: "flex",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    marginBottom: 24,
+    gap: 16,
+    flexWrap: "wrap",
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: 700,
+    margin: "0 0 4px",
+    color: "var(--orca-ink)",
+  },
+  subtitle: {
+    fontSize: 13,
+    color: "var(--orca-muted)",
+    margin: 0,
+  },
+  headerRight: {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    flexShrink: 0,
+  },
+  lastFetched: {
+    fontSize: 11,
+    color: "var(--orca-muted)",
+  },
+  refreshBtn: {
+    fontSize: 13,
+    padding: "7px 14px",
+    borderRadius: 8,
+    border: "1px solid var(--orca-line)",
+    background: "var(--orca-slate)",
+    color: "var(--orca-ink)",
+    cursor: "pointer",
+  },
+
+  /* Tabs */
+  tabBar: {
+    display: "flex",
+    gap: 4,
+    marginBottom: 16,
+    borderBottom: "1px solid var(--orca-line)",
+    paddingBottom: 0,
+  },
+  tab: {
+    fontSize: 13,
+    fontWeight: 500,
+    padding: "8px 16px",
+    border: "none",
+    borderBottom: "2px solid transparent",
+    background: "transparent",
+    color: "var(--orca-muted)",
+    cursor: "pointer",
+    borderRadius: "6px 6px 0 0",
+    transition: "color 0.15s, border-color 0.15s",
+  },
+  tabActive: {
+    color: "var(--orca-hi)",
+    borderBottom: "2px solid var(--orca-hi)",
+    background: "rgba(255,179,35,0.06)",
+  },
+
+  /* Filter bar */
+  filterBar: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 16,
+    flexWrap: "wrap",
+  },
+  searchInput: {
+    flex: "1 1 200px",
+    minWidth: 180,
+    padding: "8px 12px",
+    fontSize: 13,
+    borderRadius: 8,
+    border: "1px solid var(--orca-line)",
+    background: "var(--orca-slate)",
+    color: "var(--orca-ink)",
+    outline: "none",
+  },
+  select: {
+    padding: "8px 10px",
+    fontSize: 13,
+    borderRadius: 8,
+    border: "1px solid var(--orca-line)",
+    background: "var(--orca-slate)",
+    color: "var(--orca-ink)",
+    cursor: "pointer",
+  },
+  resultCount: {
+    fontSize: 12,
+    color: "var(--orca-muted)",
+    whiteSpace: "nowrap",
+    marginLeft: "auto",
+  },
+
+  /* Error */
+  errorBanner: {
+    background: "#2e0d0d",
+    border: "1px solid #6b1a1a",
+    color: "#f87171",
+    borderRadius: 8,
+    padding: "12px 16px",
+    fontSize: 13,
+    marginBottom: 16,
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+  },
+  retryLink: {
+    marginLeft: "auto",
+    background: "transparent",
+    border: "1px solid #6b1a1a",
+    color: "#f87171",
+    fontSize: 12,
+    padding: "4px 10px",
+    borderRadius: 6,
+    cursor: "pointer",
+  },
+
+  /* Table */
+  tableWrapper: {
+    border: "1px solid var(--orca-line)",
+    borderRadius: 10,
+    overflow: "hidden",
+  },
+  table: {
+    width: "100%",
+    borderCollapse: "collapse",
+    fontSize: 12.5,
+  },
+  th: {
+    padding: "10px 12px",
+    textAlign: "left",
+    fontSize: 11,
+    fontWeight: 600,
+    color: "var(--orca-muted)",
+    textTransform: "uppercase",
+    letterSpacing: "0.05em",
+    background: "var(--orca-abyss)",
+    borderBottom: "1px solid var(--orca-line)",
+    whiteSpace: "nowrap",
+  },
+  tr: {
+    borderBottom: "1px solid rgba(255,255,255,0.04)",
+    transition: "background 0.1s",
+  },
+  td: {
+    padding: "9px 12px",
+    color: "var(--orca-ink)",
+    verticalAlign: "middle",
+  },
+
+  /* Empty / loading */
+  emptyState: {
+    padding: "48px 24px",
+    textAlign: "center",
+    color: "var(--orca-muted)",
+    fontSize: 13,
+  },
+
+  /* Badges & pills */
+  badge: {
+    display: "inline-block",
+    fontSize: 10,
+    fontWeight: 700,
+    padding: "2px 7px",
+    borderRadius: 4,
+    textTransform: "uppercase",
+    letterSpacing: "0.04em",
+    whiteSpace: "nowrap",
+  },
+  jobPill: {
+    display: "inline-block",
+    fontSize: 10,
+    fontWeight: 600,
+    padding: "2px 7px",
+    borderRadius: 4,
+    textTransform: "uppercase",
+    letterSpacing: "0.04em",
+  },
+  actionBadge: {
+    display: "inline-block",
+    fontSize: 10.5,
+    fontWeight: 600,
+    padding: "3px 8px",
+    borderRadius: 5,
+    letterSpacing: "0.02em",
+    whiteSpace: "nowrap",
+    maxWidth: 200,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+  },
+
+  /* Resource cell */
+  resourceCell: {
+    display: "flex",
+    alignItems: "center",
+    gap: 4,
+  },
+  resourceType: {
+    fontSize: 11,
+    color: "var(--orca-muted)",
+    textTransform: "uppercase",
+    letterSpacing: "0.04em",
+  },
+  resourceId: {
+    fontSize: 11,
+    color: "var(--orca-hi)",
+    fontVariantNumeric: "tabular-nums",
+  },
+
+  /* Message text */
+  msgText: {
+    display: "block",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    maxWidth: 460,
+    color: "var(--orca-ink)",
+  },
+
+  /* Expand */
+  expandBtn: {
+    background: "transparent",
+    border: "none",
+    color: "var(--orca-muted)",
+    cursor: "pointer",
+    fontSize: 10,
+    padding: "4px 6px",
+    borderRadius: 4,
+    lineHeight: 1,
+  },
+
+  /* Payload JSON viewer */
+  payloadTd: {
+    padding: "0 12px 12px 12px",
+    borderBottom: "1px solid var(--orca-line)",
+  },
+  payload: {
+    margin: 0,
+    padding: "12px 14px",
+    background: "var(--orca-abyss)",
+    borderRadius: 8,
+    border: "1px solid var(--orca-line)",
+    fontSize: 11.5,
+    color: "#94a3b8",
+    overflowX: "auto",
+    lineHeight: 1.6,
+    whiteSpace: "pre-wrap",
+    wordBreak: "break-all",
+  },
+};
