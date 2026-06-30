@@ -4,18 +4,28 @@
 export const STORAGE_KEY  = "orca.session";
 export const CSRF_KEY = "orca.csrf";
 
+let csrfFetchPromise = null;
+
 // Call once on app startup to fetch and cache the CSRF token
-export async function fetchCsrfToken() {
-  try {
-    const res = await fetch("/api/csrf-token", { credentials: "include" });
-    if (!res.ok) throw new Error("Failed to fetch CSRF token");
-    const data = await res.json();
-    if (data.csrfToken) {
-      sessionStorage.setItem(CSRF_KEY, data.csrfToken);
-    }
-  } catch {
-    sessionStorage.removeItem(CSRF_KEY);
-  }
+export function fetchCsrfToken() {
+  if (csrfFetchPromise) return csrfFetchPromise;
+
+  csrfFetchPromise = fetch("/api/csrf-token", { credentials: "include" })
+    .then(async (res) => {
+      if (!res.ok) throw new Error("Failed to fetch CSRF token");
+      const data = await res.json();
+      if (data.csrfToken) {
+        sessionStorage.setItem(CSRF_KEY, data.csrfToken);
+      }
+    })
+    .catch(() => {
+      sessionStorage.removeItem(CSRF_KEY);
+    })
+    .finally(() => {
+      csrfFetchPromise = null;
+    });
+
+  return csrfFetchPromise;
 }
 
 /**
@@ -37,12 +47,18 @@ export async function fetchCsrfToken() {
  * All other pages redirect to /login.
  */
 export async function apiFetch(url, options = {}) {
-  const token = sessionStorage.getItem(STORAGE_KEY);
-  const csrfToken = sessionStorage.getItem(CSRF_KEY);
   const method = (options.method || "GET").toUpperCase();
   const mutating = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
 
-  const headers = { ...options.headers };
+  // If mutating and storage is empty, wait for the token initialization
+  if (mutating && !sessionStorage.getItem(CSRF_KEY)) {
+    await fetchCsrfToken();
+  }
+
+  let token = sessionStorage.getItem(STORAGE_KEY);
+  let csrfToken = sessionStorage.getItem(CSRF_KEY);
+  let headers = { ...options.headers };
+
   if (token && url.startsWith("/api")) {
     headers.Authorization = `Bearer ${token}`;
   }
@@ -50,7 +66,25 @@ export async function apiFetch(url, options = {}) {
     headers["x-csrf-token"] = csrfToken;
   }
 
-  const response = await fetch(url, { ...options, headers, credentials: "include" });
+  let response = await fetch(url, { ...options, headers, credentials: "include" });
+
+  // If the server rejects the token, try refreshing it ONCE automatically 
+  // before giving up or throwing a false error.
+  if (response.status === 403 && mutating) {
+    const errorData = await response.clone().json().catch(() => ({}));
+    if (errorData.error === "invalid csrf token" || errorData.message?.includes("csrf")) {
+      
+      // Force fetch a clean, synchronized token
+      await fetchCsrfToken();
+      csrfToken = sessionStorage.getItem(CSRF_KEY);
+      
+      if (csrfToken) {
+        // Re-attach the new token and retry the request silently
+        headers["x-csrf-token"] = csrfToken;
+        response = await fetch(url, { ...options, headers, credentials: "include" });
+      }
+    }
+  }
 
   // Global 401 handler — session revoked or expired on the server side.
   if (response.status === 401) {
@@ -65,9 +99,7 @@ export async function apiFetch(url, options = {}) {
 
     // Only redirect if we aren't already on a login page (avoids redirect
     // loops if the login page itself makes an unauthenticated API call).
-    const alreadyOnLogin =
-      window.location.pathname === "/adm/administratorLogin" ||
-      window.location.pathname === "/login";
+    const alreadyOnLogin = window.location.pathname === "/adm/administratorLogin" || window.location.pathname === "/login";
 
     if (!alreadyOnLogin) {
       await fetchCsrfToken(); // get a fresh token before redirecting
