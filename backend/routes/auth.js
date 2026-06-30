@@ -162,7 +162,7 @@ async function handleLogin(req, res, { adminOnly }) {
       return res.status(401).json({ error: GENERIC_LOGIN_ERROR });
     }
 
-    const { result, user } = await authenticateUser(email, password);
+    const { result, user } = await authenticateUser(email, password, req.ip);
 
     if (result !== AuthResult.SUCCESS) {
       // Log the REAL reason internally; return the GENERIC message externally.

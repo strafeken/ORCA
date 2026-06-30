@@ -3,6 +3,7 @@ const router = express.Router();
 const pool = require('../db/pool').promise();
 const { authMiddleware, requireRole } = require('../middleware/authMiddleware');
 const { system, audit } = require('../utils/winstonLogger');
+const { categorizeAction } = require('../utils/auditCategories');
 
 const LOKI_URL = process.env.LOKI_URL;
 
@@ -24,7 +25,91 @@ router.use(authMiddleware, requireRole('admin'));
  * admin middleware above. Enriches each entry with audit-specific
  * fields (userId, actionType, resourceType, resourceId) so the UI
  * can show a richer audit view (SR-29).
+ *
+ * FIX: winston-loki does not always emit the meta object (userId,
+ * actionType, resourceType, resourceId, ip) as separate top-level JSON
+ * keys on the stored line. In practice the line that actually lands in
+ * Loki looks like:
+ *
+ *   {
+ *     "ts": "...", "level": "info", "job": "audit",
+ *     "msg": "ADMIN_LIST_USERS {\"userId\":5,\"actionType\":\"ADMIN_LIST_USERS\",...}",
+ *     "userId": null, "actionType": null, "resourceType": null, "resourceId": null, "ip": "—"
+ *   }
+ *
+ * i.e. the structured meta got appended onto `message` as a stringified
+ * JSON suffix instead of being merged into the entry, so the top-level
+ * fields really are null and `JSON.parse(line)` alone never recovers them.
+ * extractAuditFields() below pulls the trailing `{...}` blob out of msg
+ * and parses it, falling back to the top-level keys first in case a
+ * future logger version (or an older log line) already has them correct.
  */
+
+// Matches a JSON object appended to the end of a message string, e.g.
+// 'ADMIN_LIST_USERS {"userId":5,"actionType":"ADMIN_LIST_USERS",...}'
+const TRAILING_JSON_RE = /\{[\s\S]*\}\s*$/;
+
+function extractAuditFields(parsed) {
+  // Prefer real top-level fields if a line already has them (forward
+  // compatible with a corrected logger).
+  const hasTopLevel =
+    parsed.userId != null ||
+    parsed.actionType != null ||
+    parsed.resourceType != null ||
+    parsed.resourceId != null;
+
+  if (hasTopLevel) {
+    const actionType = parsed.actionType ?? null;
+    return {
+      userId: parsed.userId ?? null,
+      actionType,
+      // category was added alongside this fix — older entries written
+      // before it won't have it stored, so re-derive from actionType in
+      // that case rather than showing a blank category for historical logs.
+      category: parsed.category ?? categorizeAction(actionType),
+      resourceType: parsed.resourceType ?? null,
+      resourceId: parsed.resourceId ?? null,
+      ip: parsed.ip && parsed.ip !== '—' ? parsed.ip : null,
+      cleanMsg: parsed.message || parsed.msg || null,
+    };
+  }
+
+  // Otherwise try to recover the fields from a trailing JSON blob inside
+  // the message string itself.
+  const rawMsg = parsed.message || parsed.msg || '';
+  const match = typeof rawMsg === 'string' ? rawMsg.match(TRAILING_JSON_RE) : null;
+
+  if (match) {
+    try {
+      const embedded = JSON.parse(match[0]);
+      const actionType = embedded.actionType ?? null;
+      return {
+        userId: embedded.userId ?? null,
+        actionType,
+        category: embedded.category ?? categorizeAction(actionType),
+        resourceType: embedded.resourceType ?? null,
+        resourceId: embedded.resourceId ?? null,
+        ip: embedded.ip && embedded.ip !== '—' ? embedded.ip : (parsed.ip && parsed.ip !== '—' ? parsed.ip : null),
+        // Strip the JSON suffix back out so the displayed message is just
+        // the human-readable action name, not "ACTION {...raw json...}".
+        cleanMsg: rawMsg.slice(0, match.index).trim() || rawMsg,
+      };
+    } catch {
+      // Trailing text looked like JSON but wasn't valid — fall through.
+    }
+  }
+
+  return {
+    userId: null,
+    actionType: null,
+    category: categorizeAction(null), // 'Other' — no actionType to derive from
+    resourceType: null,
+    resourceId: null,
+    ip: parsed.ip && parsed.ip !== '—' ? parsed.ip : null,
+    cleanMsg: rawMsg || null,
+  };
+}
+
 router.get('/logs', async (req, res) => {
   const { job = '', level = '', search = '', range = '1h' } = req.query;
 
@@ -44,17 +129,21 @@ router.get('/logs', async (req, res) => {
       for (const [ts, line] of stream.values) {
         let parsed = {};
         try { parsed = JSON.parse(line); } catch { parsed = { msg: line }; }
+
+        const fields = extractAuditFields(parsed);
+
         logs.push({
           ts: new Date(Number(ts) / 1e6).toISOString(),
           level: stream.stream?.level || parsed.level || 'info',
           job: stream.stream?.job || 'system',
-          msg: parsed.message || parsed.msg || line,
-          ip: parsed.ip || '—',
+          msg: fields.cleanMsg || line,
+          ip: fields.ip || '—',
           // Audit-specific fields (present on job="audit" entries)
-          userId: parsed.userId ?? null,
-          actionType: parsed.actionType ?? null,
-          resourceType: parsed.resourceType ?? null,
-          resourceId: parsed.resourceId ?? null,
+          userId: fields.userId,
+          actionType: fields.actionType,
+          category: fields.category,
+          resourceType: fields.resourceType,
+          resourceId: fields.resourceId,
         });
       }
     }
@@ -154,13 +243,16 @@ router.delete('/users/:id', async (req, res) => {
       [targetId]
     );
 
-    // SR-29: full audit record for account deletion.
+    // SR-29: full audit record for account deletion. level: 'warn' so this
+    // stands out in the log viewer — irreversible-by-design account
+    // deletions warrant more visibility than routine info-level actions.
     audit.log({
       userId: req.user.id,
       actionType: 'ADMIN_DELETE_USER',
       resourceType: 'user',
       resourceId: targetId,
       ip: req.ip,
+      level: 'warn',
     });
 
     system.info('Admin deleted user account (soft)', {
@@ -482,12 +574,14 @@ router.delete('/conversations/:id', async (req, res) => {
 
     // Write the audit entry FIRST — if the DELETE fails, the log still
     // records the attempt. The Loki sink is append-only (SR-30).
+    // level: 'warn' — permanent chat log deletion warrants standing out.
     audit.log({
       userId: req.user.id,
       actionType: 'ADMIN_DELETE_CHAT_LOG',
       resourceType: 'conversation',
       resourceId: convId,
       ip: req.ip,
+      level: 'warn',
     });
 
     // Delete messages before the conversation (FK dependency).

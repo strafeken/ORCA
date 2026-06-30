@@ -16,7 +16,16 @@ import { apiFetch } from "../auth/api";
  *   • Tab switcher: "Audit" (job=audit) | "System" (job=system) | "All"
  *   • Live search (text filter applied client-side after fetch)
  *   • Time-range selector: 15 m / 1 h / 6 h / 24 h / 7 d
- *   • Action-type filter populated from the current result set
+ *   • Category column + filter: every audit actionType is bucketed into
+ *     Create / Read / Update / Delete / Login (see backend/utils/
+ *     auditCategories.js) instead of only ever showing Winston's severity
+ *     level (info/warn/error), which said nothing about the kind of
+ *     operation performed.
+ *   • Dedicated Action Type column + filter, populated from the result set
+ *   • Resource column (resourceType + resourceId) on audit/all tabs — the
+ *     dedicated Message column was removed since action names and messages
+ *     were near-duplicates and overlapped visually at smaller widths; the
+ *     raw message is still searchable and visible in the expanded payload.
  *   • Level badge: colour-coded info / warn / error
  *   • Expandable row showing the full JSON payload
  *   • Refresh button (manual) + last-fetched timestamp
@@ -37,6 +46,7 @@ export default function AdminLogs() {
   const [range, setRange]       = useState("1h");
   const [search, setSearch]     = useState("");
   const [actionFilter, setActionFilter] = useState("all");
+  const [categoryFilter, setCategoryFilter] = useState("all"); // Create/Read/Update/Delete/Login/Other
 
   // ── Expanded rows ──────────────────────────────────────────────────
   const [expanded, setExpanded] = useState(new Set());
@@ -83,12 +93,14 @@ export default function AdminLogs() {
   function handleTabChange(nextTab) {
     setTab(nextTab);
     setActionFilter("all");
+    setCategoryFilter("all");
     setLoading(true);
   }
 
   function handleRangeChange(nextRange) {
     setRange(nextRange);
     setActionFilter("all");
+    setCategoryFilter("all");
     setLoading(true);
   }
 
@@ -100,6 +112,12 @@ export default function AdminLogs() {
 
   // ── Derived data ───────────────────────────────────────────────────
 
+  // Fixed display order for the category filter — always the same 5
+  // CRUD+Login buckets (+ "Other" for anything uncategorized), unlike
+  // actionTypes below which is dynamically derived from whatever's in the
+  // current result set.
+  const CATEGORY_ORDER = ["all", "Create", "Read", "Update", "Delete", "Login", "Other"];
+
   // Unique action types present in the current result set (audit tab only).
   const actionTypes = useMemo(() => {
     const types = new Set();
@@ -107,9 +125,13 @@ export default function AdminLogs() {
     return ["all", ...Array.from(types).sort()];
   }, [logs]);
 
-  // Apply client-side text search + action filter.
+  // Apply client-side text search + category + action filter.
   const filtered = useMemo(() => {
     let result = [...logs];
+
+    if (categoryFilter !== "all") {
+      result = result.filter((l) => (l.category || "Other") === categoryFilter);
+    }
 
     if (actionFilter !== "all") {
       result = result.filter((l) => l.actionType === actionFilter);
@@ -120,6 +142,7 @@ export default function AdminLogs() {
       result = result.filter((l) =>
         (l.msg        || "").toLowerCase().includes(q) ||
         (l.actionType || "").toLowerCase().includes(q) ||
+        (l.category   || "").toLowerCase().includes(q) ||
         (l.userId     != null && String(l.userId).includes(q)) ||
         (l.resourceId != null && String(l.resourceId).includes(q)) ||
         (l.ip         || "").toLowerCase().includes(q)
@@ -127,7 +150,7 @@ export default function AdminLogs() {
     }
 
     return result;
-  }, [logs, search, actionFilter]);
+  }, [logs, search, actionFilter, categoryFilter]);
 
   // ── Toggle row expansion ───────────────────────────────────────────
   function toggleRow(idx) {
@@ -204,6 +227,22 @@ export default function AdminLogs() {
           aria-label="Search logs"
         />
 
+        {/* Category filter (Create/Read/Update/Delete/Login) — audit only */}
+        {tab !== "system" && (
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            style={s.select}
+            aria-label="Filter by category"
+          >
+            {CATEGORY_ORDER.map((c) => (
+              <option key={c} value={c}>
+                {c === "all" ? "All categories" : c}
+              </option>
+            ))}
+          </select>
+        )}
+
         {/* Action type filter (audit only) */}
         {tab !== "system" && (
           <select
@@ -269,9 +308,10 @@ export default function AdminLogs() {
                 )}
                 {tab !== "system" && (
                   <>
-                    <th style={{ ...s.th, width: 220 }}>Action / Message</th>
+                    <th style={{ ...s.th, width: 90  }}>Category</th>
+                    <th style={{ ...s.th, width: 170 }}>Action Type</th>
                     <th style={{ ...s.th, width: 72  }}>User ID</th>
-                    <th style={{ ...s.th, width: 90  }}>Resource</th>
+                    <th style={{ ...s.th, width: 130 }}>Resource</th>
                     <th style={{ ...s.th, width: 110 }}>IP</th>
                   </>
                 )}
@@ -311,7 +351,8 @@ export default function AdminLogs() {
  * investigating an incident.
  */
 function LogRow({ log, idx, tab, expanded, onToggle, fmtTs }) {
-  const colSpan = tab === "all" ? 8 : tab === "audit" ? 7 : 4;
+  // Column count per tab: ts + level (+ job on all/system) (+ msg/category/action/userId/ip on audit/all) + expand
+  const colSpan = tab === "all" ? 9 : tab === "audit" ? 8 : 4;
 
   return (
     <>
@@ -352,16 +393,19 @@ function LogRow({ log, idx, tab, expanded, onToggle, fmtTs }) {
         {/* Audit-specific columns */}
         {tab !== "system" && (
           <>
-            <td style={{ ...s.td, maxWidth: 220 }}>
+            <td style={{ ...s.td, maxWidth: 90 }}>
+              <CategoryBadge category={log.category} />
+            </td>
+            <td style={{ ...s.td, maxWidth: 170 }}>
               {log.actionType
                 ? <ActionBadge action={log.actionType} />
-                : <span style={s.msgText}>{log.msg || "—"}</span>
+                : "—"
               }
             </td>
             <td style={{ ...s.td, fontSize: 11.5, color: "var(--orca-muted)" }}>
               {log.userId ?? "—"}
             </td>
-            <td style={{ ...s.td, fontSize: 11.5 }}>
+            <td style={{ ...s.td, fontSize: 11.5, maxWidth: 130 }}>
               {log.resourceType
                 ? (
                   <span style={s.resourceCell}>
@@ -470,6 +514,50 @@ function ActionBadge({ action }) {
       border: `1px solid ${border}`,
     }}>
       {action}
+    </span>
+  );
+}
+
+/**
+ * Colour-coded CRUD+Login category badge. Each category gets a fixed,
+ * distinct colour so admins can scan the column visually without reading
+ * every label — e.g. red for Delete jumps out the same way it does for the
+ * destructive ActionBadge styling above, by design.
+ */
+function CategoryBadge({ category }) {
+  const cat = category || "Other";
+
+  let c;
+  switch (cat) {
+    case "Create":
+      c = { bg: "#0d2e1a", color: "#4ade80", border: "#166534" }; // green
+      break;
+    case "Read":
+      c = { bg: "#1a2e3b", color: "#64b5f6", border: "#1e4a6e" }; // blue
+      break;
+    case "Update":
+      c = { bg: "#2e2400", color: "#f59e0b", border: "#6b4e00" }; // amber
+      break;
+    case "Delete":
+      c = { bg: "#2e0d0d", color: "#f87171", border: "#6b1a1a" }; // red
+      break;
+    case "Login":
+      c = { bg: "#2e1d5e", color: "#b39ddb", border: "#4a3270" }; // purple
+      break;
+    case "Other":
+    default:
+      c = { bg: "var(--orca-slate)", color: "var(--orca-muted)", border: "var(--orca-line)" };
+      break;
+  }
+
+  return (
+    <span style={{
+      ...s.badge,
+      background: c.bg,
+      color: c.color,
+      border: `1px solid ${c.border}`,
+    }}>
+      {cat}
     </span>
   );
 }

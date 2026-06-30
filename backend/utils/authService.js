@@ -6,6 +6,7 @@ const {
   hashToken,
   refreshExpiryDate,
 } = require('./tokens');
+const { audit } = require('./winstonLogger');
 
 /**
  * Authentication service — the single shared core used by BOTH the public
@@ -49,9 +50,15 @@ const AuthResult = {
  * credentials are good and the account is allowed in. Token/session creation is
  * a separate step (createSession) so the same check can be reused.
  *
+ * @param {string} email
+ * @param {string} password
+ * @param {string|null} [ip] - source IP, forwarded only as far as
+ *   registerFailedAttempt so a soft/hard lockout audit event can record
+ *   SR-29's required source-IP field. Optional and defaults to null so any
+ *   existing caller that doesn't pass it keeps working unchanged.
  * @returns {{ result: string, user?: object }}
  */
-async function authenticateUser(email, password) {
+async function authenticateUser(email, password, ip = null) {
   // Look the user up by email. We always run the password verification path
   // even when the user doesn't exist (see below) to keep timing uniform.
   const [rows] = await pool.query(
@@ -86,7 +93,7 @@ async function authenticateUser(email, password) {
   const passwordOk = await verifyPassword(user.password_hash, password);
 
   if (!passwordOk) {
-    await registerFailedAttempt(user);
+    await registerFailedAttempt(user, ip);
     return { result: AuthResult.INVALID_CREDENTIALS };
   }
 
@@ -114,8 +121,14 @@ async function authenticateUser(email, password) {
  * Increment the failure counter and apply soft/hard locks as thresholds are
  * crossed. Done in a single UPDATE per state to keep it simple and atomic
  * enough for this scale.
+ *
+ * Emits a warn-level audit event (ACCOUNT_SOFT_LOCKED / ACCOUNT_HARD_LOCKED)
+ * exactly once, at the request that crosses the relevant threshold — not on
+ * every failed attempt while already locked, and not as a routine 'info'
+ * entry, since an account becoming locked is more security-relevant than a
+ * single failed login and should stand out in the audit log viewer.
  */
-async function registerFailedAttempt(user) {
+async function registerFailedAttempt(user, ip = null) {
   const attempts = user.failed_attempts + 1;
 
   if (attempts >= HARD_LOCK_THRESHOLD) {
@@ -123,6 +136,14 @@ async function registerFailedAttempt(user) {
       `UPDATE users SET failed_attempts = ?, is_hard_locked = TRUE WHERE id = ?`,
       [attempts, user.id]
     );
+    audit.log({
+      userId: user.id,
+      actionType: 'ACCOUNT_HARD_LOCKED',
+      resourceType: 'user',
+      resourceId: user.id,
+      ip,
+      level: 'warn',
+    });
     return;
   }
 
@@ -134,6 +155,20 @@ async function registerFailedAttempt(user) {
        WHERE id = ?`,
       [attempts, until, user.id]
     );
+    // Only fire once, on the request that actually crosses the threshold —
+    // user.failed_attempts is the count BEFORE this attempt, so this check
+    // (rather than re-checking is_soft_locked, which would now be true on
+    // every subsequent failed attempt too) guarantees a single event.
+    if (user.failed_attempts < SOFT_LOCK_THRESHOLD) {
+      audit.log({
+        userId: user.id,
+        actionType: 'ACCOUNT_SOFT_LOCKED',
+        resourceType: 'user',
+        resourceId: user.id,
+        ip,
+        level: 'warn',
+      });
+    }
     return;
   }
 
