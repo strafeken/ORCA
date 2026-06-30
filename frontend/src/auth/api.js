@@ -3,6 +3,21 @@
 
 export const STORAGE_KEY  = "orca.session";
 const        REFRESH_KEY  = "orca.refresh";
+export const CSRF_KEY = "orca.csrf";
+
+// Call once on app startup to fetch and cache the CSRF token
+export async function fetchCsrfToken() {
+  try {
+    const res = await fetch("/api/csrf-token", { credentials: "include" });
+    if (!res.ok) throw new Error("Failed to fetch CSRF token");
+    const data = await res.json();
+    if (data.csrfToken) {
+      sessionStorage.setItem(CSRF_KEY, data.csrfToken);
+    }
+  } catch {
+    sessionStorage.removeItem(CSRF_KEY);
+  }
+}
 
 /**
  * Authenticated fetch wrapper.
@@ -24,23 +39,30 @@ const        REFRESH_KEY  = "orca.refresh";
  */
 export async function apiFetch(url, options = {}) {
   const token = sessionStorage.getItem(STORAGE_KEY);
-  const headers = { ...(options.headers || {}) };
+  const csrfToken = sessionStorage.getItem(CSRF_KEY);
+  const method = (options.method || "GET").toUpperCase();
+  const mutating = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
+
+  const headers = { ...options.headers };
   if (token && url.startsWith("/api")) {
     headers.Authorization = `Bearer ${token}`;
   }
+  if (mutating && csrfToken) {
+    headers["x-csrf-token"] = csrfToken;
+  }
 
-  const response = await fetch(url, { ...options, headers });
+  const response = await fetch(url, { ...options, headers, credentials: "include" });
 
   // Global 401 handler — session revoked or expired on the server side.
   if (response.status === 401) {
     // Clear every stored credential so the user is fully signed out locally.
     sessionStorage.removeItem(STORAGE_KEY);
-    sessionStorage.removeItem(REFRESH_KEY);
+    sessionStorage.removeItem(CSRF_KEY); // was REFRESH_KEY — no longer applicable
 
     // Redirect to the correct login page based on where the user is now.
     // Admin panel pages live under /adm/; everyone else uses /login.
     const isAdminPath = window.location.pathname.startsWith("/adm/");
-    const loginPath   = isAdminPath ? "/adm/administratorLogin" : "/login";
+    const loginPath = isAdminPath ? "/adm/administratorLogin" : "/login";
 
     // Only redirect if we aren't already on a login page (avoids redirect
     // loops if the login page itself makes an unauthenticated API call).
