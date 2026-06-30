@@ -1,5 +1,5 @@
 import { Routes, Route, Navigate } from "react-router-dom";
-import { RequireAuth, RequireAdmin } from "./auth/guards";
+import { RequireAuth, RequireAdmin, RedirectIfAuthed } from "./auth/guards";
 import AppShell from "./components/AppShell";
 import AdminShell from "./components/AdminShell";
 
@@ -54,12 +54,16 @@ export default function App() {
   return (
     <Routes>
       {/* ── Public ───────────────────────────────────── */}
-      <Route path="/" element={<Landing />} />
-      <Route path="/login" element={<Login />} />
-      <Route path="/register" element={<Register />} />
+      {/* Landing + auth pages: if already logged in, bounce to dashboard so the
+          dashboard is the effective home for authenticated users. */}
+      <Route element={<RedirectIfAuthed />}>
+        <Route path="/" element={<Landing />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
+      </Route>
       <Route path="/verify-email" element={<VerifyEmail />} />
-      <Route path="/forgot-password" element={<ForgotPassword />} />
-      <Route path="/reset-password" element={<ResetPassword />} />
 
       {/* Admin login — public but separated from the regular login surface */}
       <Route path="/adm/administratorLogin" element={<AdminLogin />} />

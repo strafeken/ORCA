@@ -23,6 +23,20 @@ import { useAuth } from "./useAuth";
  *   </Route>
  */
 
+/**
+ * RedirectIfAuthed — wrap public auth pages (/login, /register, /forgot-password)
+ * so an already-logged-in user is sent to their dashboard instead of seeing the
+ * sign-in form again. This fixes the "sign in -> back -> must sign in again"
+ * confusion: once authenticated, the login page is simply not reachable.
+ */
+export function RedirectIfAuthed() {
+  const { isAuthenticated } = useAuth();
+  if (isAuthenticated) {
+    return <Navigate to="/dashboard" replace />;
+  }
+  return <Outlet />;
+}
+
 export function RequireAuth() {
   const { isAuthenticated } = useAuth();
   const location = useLocation();

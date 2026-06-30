@@ -63,8 +63,9 @@ export default function Register() {
             <h1 style={s.h1}>Almost there</h1>
             {role === "worker" ? (
               <p style={s.sub}>
-                We've sent a verification link to <strong>{email}</strong>. Click it to activate
-                your account, then sign in.
+                If <strong>{email}</strong> isn't already registered, a verification link is on
+                its way. Click the link in that email to activate your account, then sign in.
+                Be sure to check your spam folder.
               </p>
             ) : (
               <p style={s.sub}>
