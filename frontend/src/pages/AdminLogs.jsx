@@ -42,14 +42,18 @@ export default function AdminLogs() {
   const [expanded, setExpanded] = useState(new Set());
 
   // ── Fetch ──────────────────────────────────────────────────────────
+  // `loading` starts true, and tab/range changes are only ever triggered by
+  // handleTabChange/handleRangeChange below (event handlers) — those set
+  // setLoading(true) synchronously there, which is fine since event handlers
+  // aren't covered by react-hooks/set-state-in-effect. This effect itself
+  // only performs the async fetch and resolves with setState calls inside
+  // .then()/.catch()/.finally(), none of which run synchronously when the
+  // effect body executes.
   const fetchLogs = useCallback(() => {
-    setLoading(true);
-    setError(null);
-
     const job = tab === "all" ? "" : tab;
     const params = new URLSearchParams({ job, range });
 
-    apiFetch(`/api/admin/logs?${params}`)
+    return apiFetch(`/api/admin/logs?${params}`)
       .then((r) => {
         if (!r.ok) throw new Error(`Server returned ${r.status}`);
         return r.json();
@@ -58,6 +62,7 @@ export default function AdminLogs() {
         setLogs(d.logs || []);
         setLastFetched(new Date());
         setExpanded(new Set()); // collapse all on refresh
+        setError(null);
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -68,10 +73,30 @@ export default function AdminLogs() {
     fetchLogs();
   }, [fetchLogs]);
 
-  // Reset action filter when tab or range changes (stale action types).
-  useEffect(() => {
+  // NOTE: actionFilter is intentionally reset inside handleTabChange /
+  // handleRangeChange below (event handlers), not in a useEffect keyed on
+  // [tab, range]. Resetting derived UI state from an effect is flagged by
+  // ESLint (react-hooks/set-state-in-effect) because it's indistinguishable
+  // from "syncing with an external system" — here it's really just part of
+  // the same user action that changed tab/range, so it belongs in the
+  // handler that already knows that's happening.
+  function handleTabChange(nextTab) {
+    setTab(nextTab);
     setActionFilter("all");
-  }, [tab, range]);
+    setLoading(true);
+  }
+
+  function handleRangeChange(nextRange) {
+    setRange(nextRange);
+    setActionFilter("all");
+    setLoading(true);
+  }
+
+  // Used by the Refresh button (event handler — not subject to the rule).
+  function refreshLogs() {
+    setLoading(true);
+    fetchLogs();
+  }
 
   // ── Derived data ───────────────────────────────────────────────────
 
@@ -141,7 +166,7 @@ export default function AdminLogs() {
               Last fetched {lastFetched.toLocaleTimeString(undefined, { hour12: false })}
             </span>
           )}
-          <button style={s.refreshBtn} onClick={fetchLogs} disabled={loading}>
+          <button style={s.refreshBtn} onClick={refreshLogs} disabled={loading}>
             {loading ? "Loading…" : "⟳ Refresh"}
           </button>
         </div>
@@ -160,7 +185,7 @@ export default function AdminLogs() {
               ...s.tab,
               ...(tab === key ? s.tabActive : {}),
             }}
-            onClick={() => setTab(key)}
+            onClick={() => handleTabChange(key)}
           >
             {label}
           </button>
@@ -198,7 +223,7 @@ export default function AdminLogs() {
         {/* Time range */}
         <select
           value={range}
-          onChange={(e) => setRange(e.target.value)}
+          onChange={(e) => handleRangeChange(e.target.value)}
           style={s.select}
           aria-label="Time range"
         >
@@ -219,7 +244,7 @@ export default function AdminLogs() {
       {error && (
         <div style={s.errorBanner} role="alert">
           <strong>Failed to load logs</strong> — {error}
-          <button style={s.retryLink} onClick={fetchLogs}>Retry</button>
+          <button style={s.retryLink} onClick={refreshLogs}>Retry</button>
         </div>
       )}
 
@@ -396,12 +421,28 @@ function LogRow({ log, idx, tab, expanded, onToggle, fmtTs }) {
 /** Colour-coded level pill. */
 function LevelBadge({ level }) {
   const lv = (level || "info").toLowerCase();
-  const colours = {
-    info:  { bg: "#1a2e3b", color: "#64b5f6", border: "#1e4a6e" },
-    warn:  { bg: "#2e2400", color: "#f59e0b", border: "#6b4e00" },
-    error: { bg: "#2e0d0d", color: "#f87171", border: "#6b1a1a" },
-  };
-  const c = colours[lv] || colours.info;
+
+  // `lv` is derived from log.level, which comes from the Loki API and is
+  // therefore untrusted input. Using it as a dynamic object key (colours[lv])
+  // is flagged by security/detect-object-injection because a malicious or
+  // unexpected key could in principle reach into the object's prototype
+  // chain. An explicit switch over known literal values removes the dynamic
+  // property access entirely — there is no expression of the form obj[key]
+  // left for the rule (or an attacker) to worry about.
+  let c;
+  switch (lv) {
+    case "warn":
+      c = { bg: "#2e2400", color: "#f59e0b", border: "#6b4e00" };
+      break;
+    case "error":
+      c = { bg: "#2e0d0d", color: "#f87171", border: "#6b1a1a" };
+      break;
+    case "info":
+    default:
+      c = { bg: "#1a2e3b", color: "#64b5f6", border: "#1e4a6e" };
+      break;
+  }
+
   return (
     <span style={{
       ...s.badge,

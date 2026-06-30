@@ -1,5 +1,5 @@
 import { Routes, Route, Navigate } from "react-router-dom";
-import { RequireAuth, RequireRole, RequireAdmin } from "./auth/guards";
+import { RequireAuth, RequireAdmin } from "./auth/guards";
 import AppShell from "./components/AppShell";
 import AdminShell from "./components/AdminShell";
 

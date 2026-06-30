@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { apiFetch } from "../auth/api";
 
 /**
@@ -23,16 +23,40 @@ export default function AdminSessions() {
   const [actionLoading, setActionLoading] = useState(false);
   const [feedback, setFeedback]   = useState(null);
 
-  function loadSessions() {
-    setLoading(true);
-    apiFetch("/api/admin/sessions")
+  // `now` drives the relative "expires in" / "idle for" columns. Reading
+  // Date.now() directly during render is impure (react-hooks/purity) since
+  // it makes the component's output depend on something outside props/state.
+  // Instead we keep a `now` value in state and refresh it on an interval —
+  // this is itself an effect's job (subscribing to the passage of time is a
+  // legitimate external-system sync), so the setState call inside it happens
+  // from a timer callback, not synchronously in the effect body.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
+  // See AdminUserManagement.jsx for the rationale: `loading` starts true so
+  // the mount effect never needs a synchronous setLoading(true) call, only
+  // the async setLoading(false) in .finally(), which is not flagged by
+  // react-hooks/set-state-in-effect.
+  const fetchSessions = useCallback(() => {
+    return apiFetch("/api/admin/sessions")
       .then((r) => r.json())
       .then((d) => { setSessions(d.sessions || []); setError(null); setLastFetched(new Date()); })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }
+  }, []);
 
-  useEffect(loadSessions, []);
+  useEffect(() => {
+    fetchSessions();
+  }, [fetchSessions]);
+
+  // Used by the Refresh button (event handler — not subject to the rule).
+  function loadSessions() {
+    setLoading(true);
+    fetchSessions();
+  }
 
   // ── Filter ────────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
@@ -74,8 +98,8 @@ export default function AdminSessions() {
     return ua.length > 60 ? ua.slice(0, 60) + "…" : ua;
   }
 
-  function timeUntil(expires) {
-    const diff = new Date(expires) - Date.now();
+  function timeUntil(expires, now) {
+    const diff = new Date(expires) - now;
     if (diff <= 0) return "expired";
     const h = Math.floor(diff / 3_600_000);
     const m = Math.floor((diff % 3_600_000) / 60_000);
@@ -87,9 +111,9 @@ export default function AdminSessions() {
   // (see backend/middleware/authMiddleware.js) and won't appear in this
   // list at all — this is just visibility into how close an active session
   // is to that cutoff.
-  function timeIdle(lastActivity) {
+  function timeIdle(lastActivity, now) {
     if (!lastActivity) return "—";
-    const diff = Date.now() - new Date(lastActivity);
+    const diff = now - new Date(lastActivity);
     if (diff < 30_000) return "just now";
     const m = Math.floor(diff / 60_000);
     const s = Math.floor((diff % 60_000) / 1000);
@@ -99,9 +123,9 @@ export default function AdminSessions() {
   // Nudges the Idle cell from muted -> amber as a session approaches the
   // 15-minute inactivity cutoff, so admins can see at a glance which
   // sessions are about to auto-expire on their own.
-  function idleWarnColor(lastActivity) {
+  function idleWarnColor(lastActivity, now) {
     if (!lastActivity) return "var(--orca-muted)";
-    const idleMs = Date.now() - new Date(lastActivity);
+    const idleMs = now - new Date(lastActivity);
     return idleMs > 10 * 60 * 1000 ? "#d97706" : "var(--orca-muted)";
   }
 
@@ -196,11 +220,11 @@ export default function AdminSessions() {
                 <td style={{ ...s.td, fontFamily: "monospace", fontSize: 12, color: "var(--orca-muted)" }}>
                   {new Date(sess.created_at).toLocaleString()}
                 </td>
-                <td style={{ ...s.td, fontFamily: "monospace", fontSize: 12, color: idleWarnColor(sess.last_activity) }}>
-                  {timeIdle(sess.last_activity)}
+                <td style={{ ...s.td, fontFamily: "monospace", fontSize: 12, color: idleWarnColor(sess.last_activity, now) }}>
+                  {timeIdle(sess.last_activity, now)}
                 </td>
                 <td style={{ ...s.td, fontFamily: "monospace", fontSize: 12 }}>
-                  {timeUntil(sess.expires_at)}
+                  {timeUntil(sess.expires_at, now)}
                 </td>
                 <td style={{ ...s.td, textAlign: "right" }}>
                   <button
@@ -247,7 +271,7 @@ const s = {
   page: { maxWidth: 1100, margin: "0 auto" },
   header: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 },
   title: { fontSize: 20, fontWeight: 700, margin: "0 0 4px" },
-  subtitle: { fontSize: 13, color: "var(--orca-muted)", margin: 0 },lastFetched: { fontSize: 11, color: "var(--orca-muted)" },lastFetched: { fontSize: 11, color: "var(--orca-muted)" },
+  subtitle: { fontSize: 13, color: "var(--orca-muted)", margin: 0 },
   headerRight: { display: "flex", alignItems: "center", gap: 12, flexShrink: 0 },
   lastFetched: { fontSize: 11, color: "var(--orca-muted)" },
   refreshBtn: { fontSize: 13, padding: "7px 14px", borderRadius: 8, border: "1px solid var(--orca-line)", background: "var(--orca-slate)", color: "var(--orca-ink)", cursor: "pointer" },

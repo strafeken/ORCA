@@ -73,7 +73,11 @@ export function AuthProvider({ children }) {
 
   // Ref (not state) so updating it on every mousemove doesn't trigger
   // re-renders — it only needs to be read by the interval check below.
-  const lastActivityRef = useRef(Date.now());
+  // Starts as null and is set inside the effect below (not here) because
+  // useRef's argument is evaluated during render, and calling an impure
+  // function like Date.now() directly in render is flagged by React's
+  // purity rule (effects, unlike render, are allowed to be impure).
+  const lastActivityRef = useRef(null);
 
   const persist = useCallback((newToken, refreshToken) => {
     if (newToken) {
@@ -156,6 +160,10 @@ export function AuthProvider({ children }) {
    * cheap timestamp writes, no harm if logged out.
    */
   useEffect(() => {
+    // Seed the initial value here rather than in useRef() above — see the
+    // comment on lastActivityRef's declaration.
+    lastActivityRef.current = Date.now();
+
     const markActive = () => {
       lastActivityRef.current = Date.now();
     };
@@ -225,7 +233,7 @@ export function AuthProvider({ children }) {
     const idleAndRefreshId = setInterval(async () => {
       if (cancelled) return;
 
-      const idleMs = Date.now() - lastActivityRef.current;
+      const idleMs = Date.now() - (lastActivityRef.current ?? Date.now());
 
       if (idleMs >= INACTIVITY_TIMEOUT_MS) {
         // Client-side mirror of the server's idle timeout — log out right

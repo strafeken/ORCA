@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { apiFetch } from "../auth/api";
 
 /**
@@ -33,16 +33,32 @@ export default function AdminUserManagement() {
   const [actionLoading, setActionLoading] = useState(false);
   const [actionMsg, setActionMsg] = useState(null);
 
-  function loadUsers() {
-    setLoading(true);
-    apiFetch("/api/admin/users")
+  // `loading` starts true so the initial fetch on mount never needs to call
+  // setLoading(true) synchronously inside the effect body — only the async
+  // .finally(() => setLoading(false)) fires, which the set-state-in-effect
+  // rule does not flag (state updates from resolved promises/callbacks are
+  // fine; only *synchronous* setState calls in the effect body itself are
+  // the rule's target). The refresh button's onClick is what re-arms the
+  // spinner for manual refreshes, since event handlers aren't covered by
+  // this rule either.
+  const fetchUsers = useCallback(() => {
+    return apiFetch("/api/admin/users")
       .then((r) => r.json())
       .then((d) => { setUsers(d.users || []); setError(null); setLastFetched(new Date()); })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }
+  }, []);
 
-  useEffect(loadUsers, []);
+  useEffect(() => {
+    fetchUsers();
+  }, [fetchUsers]);
+
+  // Used by the Refresh button — an event handler, so setLoading(true) here
+  // is not subject to react-hooks/set-state-in-effect.
+  function loadUsers() {
+    setLoading(true);
+    fetchUsers();
+  }
 
   // ── Filtering ────────────────────────────────────────────────────────
   const filtered = useMemo(() => {

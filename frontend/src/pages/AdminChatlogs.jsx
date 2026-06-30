@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { apiFetch } from "../auth/api";
 
 /**
@@ -30,16 +30,26 @@ export default function AdminChatLogs() {
   const [feedback, setFeedback]           = useState(null);
 
   // ── Load conversation list ───────────────────────────────────────────
-  function loadConversations() {
-    setLoadingConvs(true);
-    apiFetch("/api/admin/conversations")
+  // See AdminUserManagement.jsx for the rationale: `loadingConvs` starts
+  // true so the mount effect never needs a synchronous setLoadingConvs(true)
+  // call, only the async setLoadingConvs(false) in .finally().
+  const fetchConversations = useCallback(() => {
+    return apiFetch("/api/admin/conversations")
       .then((r) => r.json())
       .then((d) => { setConversations(d.conversations || []); setConvError(null); setLastFetched(new Date()); })
       .catch((e) => setConvError(e.message))
       .finally(() => setLoadingConvs(false));
-  }
+  }, []);
 
-  useEffect(loadConversations, []);
+  useEffect(() => {
+    fetchConversations();
+  }, [fetchConversations]);
+
+  // Used by the Refresh button (event handler — not subject to the rule).
+  function loadConversations() {
+    setLoadingConvs(true);
+    fetchConversations();
+  }
 
   // ── Load messages when a conversation is selected ───────────────────
   function selectConversation(conv) {
