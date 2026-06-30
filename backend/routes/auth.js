@@ -10,6 +10,7 @@ const {
   AuthResult,
 } = require('../utils/authService');
 const { authLimiter, adminAuthLimiter } = require('../middleware/authRateLimiter');
+const { authMiddlewareNoTouch } = require('../middleware/authMiddleware');
 const { system, audit } = require('../utils/winstonLogger');
 const { issueToken } = require('../utils/oneTimeTokens');
 const { sendActionEmail } = require('../utils/mailer');
@@ -23,6 +24,8 @@ const APP_URL = process.env.APP_URL || 'http://localhost';
  *   POST /api/auth/register     create a worker or expert account
  *   POST /api/auth/login        log in (workers + experts; rejects admins)
  *   POST /api/auth/admin/login  log in (admins only; stricter limit + audit)
+ *   GET  /api/auth/session      lightweight heartbeat to detect server-side
+ *                                revocation/idle-expiry without resetting it
  *   POST /api/auth/logout       revoke the current session
  *   POST /api/auth/refresh      exchange a refresh token for a new access token
  *
@@ -226,6 +229,29 @@ router.post('/login', authLimiter, (req, res) => handleLogin(req, res, { adminOn
 router.post('/admin/login', adminAuthLimiter, (req, res) => handleLogin(req, res, { adminOnly: true }));
 
 // ---------------------------------------------------------------------------
+// SESSION CHECK — lightweight authenticated heartbeat.
+//
+// Access tokens are stateless JWTs, so a session that an admin has revoked
+// (DELETE /api/admin/sessions/:id), an expert whose approval was just
+// revoked, or an account that was just deleted, all still hold a "valid"
+// signed JWT until it naturally expires. Pages that never make another API
+// call (e.g. a static dashboard) would therefore never discover the
+// revocation.
+//
+// The frontend polls this endpoint periodically and on tab focus. It uses
+// authMiddlewareNoTouch (not the regular authMiddleware) deliberately: a
+// background poll is not real user activity, so it must NOT reset the
+// session's 15-minute inactivity clock — otherwise an abandoned tab would
+// keep itself "active" forever just by polling. A revoked, idle-expired, or
+// naturally-expired session gets a 401 here within one poll interval, and
+// the shared apiFetch 401 handler then clears local storage and redirects to
+// the correct login page.
+// ---------------------------------------------------------------------------
+router.get('/session', authMiddlewareNoTouch, (req, res) => {
+  res.json({ user: req.user });
+});
+
+// ---------------------------------------------------------------------------
 // LOGOUT — revoke the session tied to the supplied refresh token.
 // ---------------------------------------------------------------------------
 router.post('/logout', async (req, res) => {
@@ -234,6 +260,29 @@ router.post('/logout', async (req, res) => {
     if (refreshToken) {
       await revokeSessionByRefreshToken(refreshToken);
     }
+
+    // SR-29: record logout in the audit trail. We get the user identity from
+    // the Authorization header (if present) so the log entry is attributable.
+    // We deliberately never fail the logout response even if audit writing
+    // throws — the session is already revoked; the user must be able to log out.
+    try {
+      const { verifyToken } = require('../utils/tokens');
+      const authHeader = req.headers['authorization'];
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        const decoded = verifyToken(authHeader.split(' ')[1]);
+        if (decoded?.id) {
+          audit.log({
+            userId: decoded.id,
+            actionType: 'USER_LOGOUT',
+            resourceType: 'session',
+            ip: req.ip,
+          });
+        }
+      }
+    } catch {
+      // Silently skip audit if token is already expired — logout is still valid.
+    }
+
     // Always return success — logout should be idempotent and never error out.
     return res.json({ message: 'Logged out.' });
   } catch (err) {
@@ -265,12 +314,36 @@ router.post('/refresh', async (req, res) => {
     );
     const session = rows[0];
     if (!session) {
+      // Covers: unknown token, already-revoked session, or the 2-hour
+      // absolute session cap (expires_at) having been reached.
       return res.status(401).json({ error: 'Invalid or expired session.' });
+    }
+
+    // Enforce the same 15-minute inactivity timeout here as authMiddleware
+    // does for every other route. The frontend only calls /refresh after
+    // confirming the user was recently active, but this endpoint has to be
+    // correct on its own regardless of what called it.
+    const idleMs = Date.now() - new Date(session.last_activity).getTime();
+    const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000;
+    if (idleMs > INACTIVITY_TIMEOUT_MS) {
+      await pool.query('UPDATE sessions SET revoked = TRUE WHERE id = ?', [session.id]);
+      return res.status(401).json({ error: 'Session expired due to inactivity.' });
     }
 
     const { issueAccessToken } = require('../utils/tokens');
     const user = { id: session.uid, name: session.name, role: session.role };
     const token = issueAccessToken(user);
+
+    // CRITICAL: point the session row at the NEW access token's hash and
+    // reset the inactivity clock. authMiddleware looks sessions up by
+    // hashing the bearer token on every request — if we don't update
+    // token_hash here, every request made with this freshly-issued token
+    // would fail to find a matching (non-revoked) session row and the user
+    // would be logged out immediately despite the "successful" refresh.
+    await pool.query(
+      'UPDATE sessions SET token_hash = ?, last_activity = NOW() WHERE id = ?',
+      [hashToken(token), session.id]
+    );
 
     return res.json({ token, user });
   } catch (err) {

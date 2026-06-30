@@ -8,10 +8,15 @@ const crypto = require('crypto');
  *   - ACCESS token: short-lived JWT (15 min). Sent on every API/socket request
  *     in the Authorization header. Short lifetime limits the damage window if
  *     one is stolen — it expires on its own quickly.
- *   - REFRESH token: long-lived random string (not a JWT), 7 days. Used once to
- *     mint a new access token, then rotated. Stored ONLY as a hash in the
+ *   - REFRESH token: long-lived random string (not a JWT), 2 hours. Used once
+ *     to mint a new access token, then rotated. Stored ONLY as a hash in the
  *     sessions table, so a database leak does not hand an attacker usable
- *     tokens (same reason we hash passwords).
+ *     tokens (same reason we hash passwords). This value is also the
+ *     absolute cap on a session's total lifetime (sessions.expires_at) — a
+ *     session is force-ended after 2 hours regardless of activity. A
+ *     separate, shorter 15-minute INACTIVITY timeout (see
+ *     middleware/authMiddleware.js) ends a session sooner than that if the
+ *     user stops making requests, the same way most banking/admin tools do.
  *
  * JWT_SECRET must come from the environment. We deliberately do NOT fall back
  * to a hardcoded default — a predictable signing secret means anyone can forge
@@ -23,7 +28,7 @@ if (!JWT_SECRET) {
 }
 
 const ACCESS_TOKEN_TTL = '15m';
-const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const REFRESH_TOKEN_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours — absolute session cap
 
 /**
  * Issue a signed access token. The payload is intentionally minimal — only what

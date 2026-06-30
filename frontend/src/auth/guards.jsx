@@ -10,11 +10,16 @@ import { useAuth } from "./useAuth";
  * what these guards allow: the client hides the door, the server locks it.
  *
  * Usage in App.jsx:
- *   <Route element={<RequireAuth />}>            // any logged-in user
+ *   <Route element={<RequireAuth />}>               // any logged-in user
  *     <Route path="/dashboard" element={<Dashboard />} />
  *   </Route>
+ *
  *   <Route element={<RequireRole roles={["admin"]} />}>
  *     <Route path="/admin" element={<AdminConsole />} />
+ *   </Route>
+ *
+ *   <Route element={<RequireAdmin />}>              // admin panel (/adm/*)
+ *     <Route path="/admin" element={<AdminDashboard />} />
  *   </Route>
  */
 
@@ -38,6 +43,36 @@ export function RequireRole({ roles }) {
   }
   if (!roles.includes(user?.role)) {
     // Authenticated but wrong role — send to their own dashboard, not login.
+    return <Navigate to="/dashboard" replace />;
+  }
+  return <Outlet />;
+}
+
+/**
+ * RequireAdmin — guard for the /adm/* admin panel routes.
+ *
+ * Differs from RequireRole in that unauthenticated users are sent to the
+ * ADMIN login page (/adm/administratorLogin), not the regular /login.
+ * Non-admin authenticated users are bounced to /dashboard so they never see
+ * a 403 error page — they simply land somewhere appropriate.
+ *
+ * The real enforcement is server-side (router.use(authMiddleware,
+ * requireRole('admin')) in backend/routes/admin.js). This guard is purely UX.
+ */
+export function RequireAdmin() {
+  const { isAuthenticated, user } = useAuth();
+  const location = useLocation();
+
+  if (!isAuthenticated) {
+    return (
+      <Navigate
+        to="/adm/administratorLogin"
+        replace
+        state={{ from: location }}
+      />
+    );
+  }
+  if (user?.role !== "admin") {
     return <Navigate to="/dashboard" replace />;
   }
   return <Outlet />;
