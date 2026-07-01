@@ -36,7 +36,7 @@ export default function ExpertDirectory() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Could not start consultation.");
-      navigate("/consult", { state: { conversationId: data.conversation.id } });
+      navigate(`/consult?c=${data.conversation.id}`);
     } catch (e) {
       setError(e.message);
     } finally {

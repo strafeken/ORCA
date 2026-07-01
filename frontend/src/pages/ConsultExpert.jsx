@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../auth/useAuth";
 import { apiFetch } from "../auth/api";
 import ConsultThread from "../components/ConsultThread";
@@ -13,52 +13,53 @@ import ConsultThread from "../components/ConsultThread";
  */
 export default function ConsultExpert() {
   const { user } = useAuth();
-  const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const isWorker = user?.role === "worker";
 
   const [conversations, setConversations] = useState([]);
   const [allExperts, setAllExperts] = useState([]);
-  const [selectedId, setSelectedId] = useState(() => location.state?.conversationId ?? null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [starting, setStarting] = useState(null);
   const [search, setSearch] = useState("");
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const requests = [apiFetch("/api/conversations").then((r) => r.json())];
-      if (isWorker) {
-        requests.push(apiFetch("/api/experts").then((r) => r.json()));
-      }
-      const [convData, expertData] = await Promise.all(requests);
-      if (!convData.conversations) throw new Error(convData.error || "Failed to load conversations.");
-      setConversations(convData.conversations);
-      if (isWorker) {
-        if (!expertData?.experts) throw new Error(expertData.error || "Failed to load experts.");
-        setAllExperts(expertData.experts);
-      }
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
+  const selectedId = useMemo(() => {
+    const id = parseInt(searchParams.get("c"), 10);
+    return Number.isInteger(id) ? id : null;
+  }, [searchParams]);
+
+  function selectConversation(id) {
+    if (id) {
+      setSearchParams({ c: String(id) }, { replace: true });
+    } else {
+      setSearchParams({}, { replace: true });
     }
+  }
+
+  // `loading` starts true so the mount effect never calls setLoading(true)
+  // synchronously — only setLoading(false) in .finally(), like AdminSessions.
+  const fetchConsultData = useCallback(() => {
+    const requests = [apiFetch("/api/conversations").then((r) => r.json())];
+    if (isWorker) {
+      requests.push(apiFetch("/api/experts").then((r) => r.json()));
+    }
+    return Promise.all(requests)
+      .then(([convData, expertData]) => {
+        if (!convData.conversations) throw new Error(convData.error || "Failed to load conversations.");
+        setConversations(convData.conversations);
+        if (isWorker) {
+          if (!expertData?.experts) throw new Error(expertData.error || "Failed to load experts.");
+          setAllExperts(expertData.experts);
+        }
+        setError(null);
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
   }, [isWorker]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- standard mount data fetch
-    loadData();
-  }, [loadData]);
-
-  // When arriving from expert directory with a new conversation id
-  useEffect(() => {
-    const id = location.state?.conversationId;
-    if (id) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- react-router location state
-      setSelectedId(id);
-    }
-  }, [location.state?.conversationId]);
+    fetchConsultData();
+  }, [fetchConsultData]);
 
   const contactedExpertIds = useMemo(
     () => new Set(conversations.map((c) => c.counterpart_id)),
@@ -119,7 +120,7 @@ export default function ConsultExpert() {
         if (prev.some((c) => c.id === row.id)) return prev;
         return [row, ...prev];
       });
-      setSelectedId(row.id);
+      selectConversation(row.id);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -158,7 +159,7 @@ export default function ConsultExpert() {
                     key={c.id}
                     type="button"
                     style={{ ...s.row, ...(selectedId === c.id ? s.rowActive : {}) }}
-                    onClick={() => setSelectedId(c.id)}
+                    onClick={() => selectConversation(c.id)}
                   >
                     <span style={s.avatar}>{c.counterpart_name.charAt(0)}</span>
                     <span style={s.rowText}>

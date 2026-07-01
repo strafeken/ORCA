@@ -26,18 +26,12 @@ export default function Dashboard() {
         {isWorker && (
           <>
             <Link to="/experts" style={s.card}>
-              <div style={s.cardTop}>
-                <span className="orca-code" style={{ color: "var(--orca-hi)" }}>DIRECTORY</span>
-                <span style={{ ...s.status, ...s.ready }}>live</span>
-              </div>
+              <span className="orca-code" style={{ color: "var(--orca-hi)", display: "block", marginBottom: 14 }}>DIRECTORY</span>
               <h3 style={s.cardTitle}>Expert directory</h3>
               <p style={s.cardBody}>Browse all verified experts by specialty and background.</p>
             </Link>
             <Link to="/consult" style={s.card}>
-              <div style={s.cardTop}>
-                <span className="orca-code" style={{ color: "var(--orca-hi)" }}>CONSULT</span>
-                <span style={{ ...s.status, ...s.ready }}>live</span>
-              </div>
+              <span className="orca-code" style={{ color: "var(--orca-hi)", display: "block", marginBottom: 14 }}>CONSULT</span>
               <h3 style={s.cardTitle}>Consult an expert</h3>
               <p style={s.cardBody}>Your conversations, new experts, messages, and video calls in one place.</p>
             </Link>
@@ -45,20 +39,14 @@ export default function Dashboard() {
         )}
         {isExpert && (
           <Link to="/consult" style={s.card}>
-            <div style={s.cardTop}>
-              <span className="orca-code" style={{ color: "var(--orca-hi)" }}>CONSULT</span>
-              <span style={{ ...s.status, ...s.ready }}>live</span>
-            </div>
+            <span className="orca-code" style={{ color: "var(--orca-hi)", display: "block", marginBottom: 14 }}>CONSULT</span>
             <h3 style={s.cardTitle}>Worker requests</h3>
             <p style={s.cardBody}>Message and video call with workers who need your help.</p>
           </Link>
         )}
         {isAdmin && (
           <Link to="/adm/managementDashboard" style={s.card}>
-            <div style={s.cardTop}>
-              <span className="orca-code" style={{ color: "var(--orca-hi)" }}>ADMIN</span>
-              <span style={{ ...s.status, ...s.ready }}>live</span>
-            </div>
+            <span className="orca-code" style={{ color: "var(--orca-hi)", display: "block", marginBottom: 14 }}>ADMIN</span>
             <h3 style={s.cardTitle}>Admin console</h3>
             <p style={s.cardBody}>Approvals, sessions, audit, and chat-log control.</p>
           </Link>
@@ -81,9 +69,6 @@ const s = {
     textDecoration: "none",
     transition: "border-color 0.15s ease",
   },
-  cardTop: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 },
-  status: { fontFamily: "var(--orca-mono)", fontSize: 11, padding: "2px 7px", borderRadius: 4, textTransform: "uppercase", letterSpacing: "1px" },
-  ready: { background: "rgba(61,214,140,0.15)", color: "var(--orca-signal)" },
   cardTitle: { fontSize: 19, fontWeight: 600, margin: "0 0 6px", color: "var(--orca-ink)" },
   cardBody: { fontSize: 14, lineHeight: 1.5, color: "var(--orca-muted)", margin: 0 },
 };

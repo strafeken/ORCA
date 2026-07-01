@@ -59,9 +59,8 @@ function ChatLegacyRedirect() {
   const id = parseInt(conversationId, 10);
   return (
     <Navigate
-      to="/consult"
+      to={Number.isInteger(id) ? `/consult?c=${id}` : "/consult"}
       replace
-      state={Number.isInteger(id) ? { conversationId: id } : undefined}
     />
   );
 }
