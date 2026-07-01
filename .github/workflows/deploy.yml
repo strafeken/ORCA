@@ -24,4 +24,6 @@ jobs:
             git fetch origin
             git checkout $GITHUB_SHA
             docker compose -f docker-compose.prod.yml down
-            docker compose -f docker-compose.prod.yml up -d --build
+            docker image prune -f
+            docker volume prune -f
+            docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
