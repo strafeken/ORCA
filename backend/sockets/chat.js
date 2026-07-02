@@ -1,18 +1,20 @@
 const pool = require('../db/pool');
 const { system } = require('../utils/winstonLogger');
+const { authorizeConversationEvent } = require('./guards');
+
+// Generous for a chat message, but bounds what one socket event can write to
+// the DB and what chat:history later replays to every joiner (SR-15).
+const MAX_MESSAGE_CHARS = 4000;
 
 const registerChatHandlers = (io, socket) => {
   const user = socket.user;
 
   // Join a conversation room
-  socket.on('chat:join', async ({ conversationId }) => {
+  socket.on('chat:join', async ({ conversationId: rawId } = {}) => {
     try {
-      // Verify user is a participant of this conversation
-      const [rows] = await pool.promise().query(
-        'SELECT id FROM conversations WHERE id = ? AND (worker_id = ? OR expert_id = ?)',
-        [conversationId, user.id, user.id]
-      );
-      if (rows.length === 0) {
+      // Live session + participant check (SR-04) — same gate as call events
+      const conversationId = await authorizeConversationEvent(socket, rawId);
+      if (!conversationId) {
         socket.emit('chat:error', { message: 'Access denied to this conversation' });
         return;
       }
@@ -39,16 +41,17 @@ const registerChatHandlers = (io, socket) => {
   });
 
   // Send a message
-  socket.on('chat:send', async ({ conversationId, content }) => {
+  socket.on('chat:send', async ({ conversationId: rawId, content } = {}) => {
     try {
-      if (!content || !content.trim()) return;
+      if (typeof content !== 'string' || !content.trim()) return;
+      if (content.length > MAX_MESSAGE_CHARS) {
+        socket.emit('chat:error', { message: 'Message is too long.' });
+        return;
+      }
 
-      // Verify user is a participant
-      const [rows] = await pool.promise().query(
-        'SELECT id FROM conversations WHERE id = ? AND (worker_id = ? OR expert_id = ?)',
-        [conversationId, user.id, user.id]
-      );
-      if (rows.length === 0) {
+      // Live session + participant check (SR-04)
+      const conversationId = await authorizeConversationEvent(socket, rawId);
+      if (!conversationId) {
         socket.emit('chat:error', { message: 'Access denied to this conversation' });
         return;
       }
