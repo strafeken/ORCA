@@ -48,8 +48,10 @@ jobs:
         uses: dependency-check/Dependency-Check_Action@main
         with:
           project: 'ORCA'
-          path: '.'
-          format: 'HTML'
+          path: |
+            ./backend
+            ./frontend
+          format: 'HTML,JSON'
           out: 'reports'
           args: >
             --enableRetired
