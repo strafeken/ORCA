@@ -8,8 +8,62 @@ jobs:
   build:
     uses: ./.github/workflows/build.yml
 
-  security-checks:
+  test-frontend:
+    name: "Test: Frontend"
     needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: ./frontend
+
+      - name: Run frontend tests with coverage
+        run: npm run test:coverage
+        working-directory: ./frontend
+
+      - name: Upload frontend coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: frontend/coverage/lcov.info
+
+  test-backend:
+    name: "Test: Backend"
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Install backend dependencies
+        run: npm ci
+        working-directory: ./backend
+
+      - name: Run backend tests with coverage
+        run: npm run test:coverage
+        working-directory: ./backend
+
+      - name: Upload backend coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend/coverage/lcov.info
+
+  security-checks:
+    needs: [build, test-frontend, test-backend]
     uses: ./.github/workflows/security-checks.yml
     secrets: inherit
     permissions:
