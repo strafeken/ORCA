@@ -30,6 +30,11 @@ const CATEGORY = {
 const ACTION_CATEGORY_MAP = {
   // ── Create ──────────────────────────────────────────────────────────
   register: CATEGORY.CREATE,
+  // SR-29 explicitly names file uploads as a sensitive action requiring an audit trail entry; voice messages and
+  // annotations are the same category of action (a new artifact created inside a conversation) so they're grouped here too.
+  FILE_UPLOADED: CATEGORY.CREATE,
+  VOICE_MESSAGE_UPLOADED: CATEGORY.CREATE,
+  ANNOTATION_CREATED: CATEGORY.CREATE,
 
   // ── Read ────────────────────────────────────────────────────────────
   ADMIN_LIST_USERS: CATEGORY.READ,
