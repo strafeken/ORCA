@@ -1,0 +1,86 @@
+const pool = require('../db/pool').promise();
+const { hashToken } = require('../utils/tokens');
+const { INACTIVITY_TIMEOUT_MS } = require('../middleware/authMiddleware');
+
+/**
+ * Shared access-control guards for socket handlers (SR-04).
+ *
+ * Sockets are long-lived while access tokens rotate every 15 minutes, so
+ * event handlers cannot re-hash the handshake token to find the session row —
+ * after the first POST /api/auth/refresh that hash no longer matches anything.
+ * Instead the handshake resolves the token to its sessions.id (stable across
+ * refreshes, see routes/auth.js) and every subsequent event re-checks that row
+ * for revocation and the 2-hour absolute expiry.
+ *
+ * The 15-minute idle timeout is deliberately NOT re-enforced per event: an
+ * open video call is pure peer-to-peer traffic and generates no HTTP requests,
+ * so last_activity can legitimately go stale mid-call. Cutting the signalling
+ * channel for "inactivity" would break live calls and the graceful-degradation
+ * requirement (SR-15). Revocation (logout, admin termination) and the absolute
+ * session cap still apply to live sockets via isSessionLive.
+ */
+
+/** Handshake-time: map a raw access token to a live session id, or null. */
+async function resolveSession(token) {
+  const [rows] = await pool.query(
+    `SELECT id, last_activity FROM sessions
+      WHERE token_hash = ? AND revoked = FALSE AND expires_at > NOW()
+      LIMIT 1`,
+    [hashToken(token)]
+  );
+  if (!rows.length) return null;
+  const idleMs = Date.now() - new Date(rows[0].last_activity).getTime();
+  if (idleMs > INACTIVITY_TIMEOUT_MS) return null;
+  return rows[0].id;
+}
+
+/** Event-time: is the session this socket connected with still valid? */
+async function isSessionLive(sessionId) {
+  if (!sessionId) return false;
+  const [rows] = await pool.query(
+    'SELECT id FROM sessions WHERE id = ? AND revoked = FALSE AND expires_at > NOW() LIMIT 1',
+    [sessionId]
+  );
+  return rows.length > 0;
+}
+
+/**
+ * Strictly parse a client-supplied conversation id. Only plain positive
+ * integers (or digit-only strings) are accepted — objects and arrays are
+ * rejected before they ever reach a query placeholder.
+ */
+function parseConversationId(raw) {
+  if (typeof raw === 'number' && Number.isInteger(raw) && raw > 0) return raw;
+  if (typeof raw === 'string' && /^\d{1,10}$/.test(raw)) return parseInt(raw, 10);
+  return null;
+}
+
+async function isParticipant(conversationId, userId) {
+  const [rows] = await pool.query(
+    'SELECT id FROM conversations WHERE id = ? AND (worker_id = ? OR expert_id = ?)',
+    [conversationId, userId, userId]
+  );
+  return rows.length > 0;
+}
+
+/**
+ * Full per-event gate: validates the conversation id, confirms the socket's
+ * session is still live, and confirms the user is a participant of that
+ * conversation. Returns the parsed conversation id, or null if any check
+ * fails — callers treat null as access denied.
+ */
+async function authorizeConversationEvent(socket, rawConversationId) {
+  const conversationId = parseConversationId(rawConversationId);
+  if (!conversationId) return null;
+  if (!(await isSessionLive(socket.sessionId))) return null;
+  if (!(await isParticipant(conversationId, socket.user.id))) return null;
+  return conversationId;
+}
+
+module.exports = {
+  resolveSession,
+  isSessionLive,
+  parseConversationId,
+  isParticipant,
+  authorizeConversationEvent,
+};
