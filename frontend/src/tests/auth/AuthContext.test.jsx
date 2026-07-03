@@ -113,4 +113,4 @@ describe('AuthContext', () => {
     const logoutCall = mockApiFetch.mock.calls.find((c) => String(c[0]).includes('/api/auth/logout'));
     expect(logoutCall).toBeDefined();
   });
-});cd
+});
