@@ -46,4 +46,20 @@ async function verifyPassword(hash, plain) {
   }
 }
 
-module.exports = { hashPassword, verifyPassword, HASH_OPTIONS };
+/**
+ * Basic password policy. Kept deliberately simple and length-forward (length
+ * matters far more than character-class rules). Tune to match the team's
+ * agreed policy; the important part is that it's enforced server-side, never
+ * trusting the client.
+ */
+function passwordPolicyError(password) {
+  if (typeof password !== 'string' || password.length < 12) {
+    return 'Password must be at least 12 characters.';
+  }
+  if (password.length > 128) {
+    return 'Password is too long.';
+  }
+  return null;
+}
+
+module.exports = { hashPassword, verifyPassword, passwordPolicyError, HASH_OPTIONS };

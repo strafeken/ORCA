@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db/pool').promise();
 
-const { hashPassword } = require('../utils/password');
+const { hashPassword, passwordPolicyError } = require('../utils/password');
 const {
   authenticateUser,
   createSession,
@@ -56,22 +56,6 @@ function isValidEmail(email) {
   // first, then use a bounded character-class regex with no nested quantifiers.
   if (typeof email !== 'string' || email.length > 254) return false;
   return /^[^\s@]{1,64}@[^\s@]{1,255}\.[^\s@]{1,255}$/.test(email);
-}
-
-/**
- * Basic password policy. Kept deliberately simple and length-forward (length
- * matters far more than character-class rules). Tune to match the team's
- * agreed policy; the important part is that it's enforced server-side, never
- * trusting the client.
- */
-function passwordPolicyError(password) {
-  if (typeof password !== 'string' || password.length < 12) {
-    return 'Password must be at least 12 characters.';
-  }
-  if (password.length > 128) {
-    return 'Password is too long.';
-  }
-  return null;
 }
 
 // ---------------------------------------------------------------------------
