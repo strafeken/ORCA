@@ -38,17 +38,17 @@ export default function AdminShell() {
   ];
 
   return (
-    <div style={s.shell}>
+    <div className="orca-admin-shell" style={s.shell}>
       {/* ── Sidebar ─────────────────────────────────────────────── */}
-      <aside style={s.sidebar}>
+      <aside className="orca-admin-sidebar" style={s.sidebar}>
         {/* Brand */}
-        <div style={s.brandRow}>
+        <div className="orca-admin-brandrow" style={s.brandRow}>
           <OrcaWordmark size={22} />
           <span style={s.adminBadge}>Admin</span>
         </div>
 
         {/* Nav */}
-        <nav style={s.nav}>
+        <nav className="orca-admin-nav" style={s.nav}>
           {navItems.map(({ to, icon, label, end }) => (
             <NavLink
               key={to}
@@ -70,13 +70,13 @@ export default function AdminShell() {
         </nav>
 
         {/* User + logout */}
-        <div style={s.foot}>
+        <div className="orca-admin-foot" style={s.foot}>
           <AdminMenu user={user} onLogout={handleLogout} />
         </div>
       </aside>
 
       {/* ── Main content ────────────────────────────────────────── */}
-      <main style={s.main}>
+      <main className="orca-admin-main" style={s.main}>
         <Outlet />
       </main>
     </div>

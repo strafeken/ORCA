@@ -173,6 +173,46 @@ describe('failed-attempt lockout escalation (SR-22)', () => {
 });
 
 /**
+ * SR-23: one active session per user. hasActiveSession first sweeps this user's
+ * idle-expired sessions (so a closed-but-not-logged-out tab doesn't lock them
+ * out), then reports whether any live session remains. The login route uses it
+ * to refuse a second concurrent login.
+ */
+describe('hasActiveSession (SR-23 single active session)', () => {
+  const { hasActiveSession } = require('../utils/authService');
+  afterEach(() => jest.clearAllMocks());
+
+  // First query is the idle-sweep UPDATE; the following SELECT COUNT(*) returns
+  // the number of live sessions. Drive the SELECT result per-test.
+  function mockLiveSessionCount(count) {
+    mockQuery.mockImplementation((sql) => {
+      if (/^SELECT/i.test(sql.trim())) return Promise.resolve([[{ active: count }]]);
+      return Promise.resolve([{ affectedRows: 0 }]); // the sweep UPDATE
+    });
+  }
+
+  test('returns true when a live session already exists', async () => {
+    mockLiveSessionCount(1);
+    await expect(hasActiveSession(1)).resolves.toBe(true);
+  });
+
+  test('returns false when the user has no live session', async () => {
+    mockLiveSessionCount(0);
+    await expect(hasActiveSession(1)).resolves.toBe(false);
+  });
+
+  test('sweeps idle-expired sessions before counting', async () => {
+    mockLiveSessionCount(0);
+    await hasActiveSession(42);
+    const sweep = mockQuery.mock.calls.find((c) => /UPDATE sessions/i.test(c[0]));
+    expect(sweep).toBeDefined();
+    expect(sweep[0]).toMatch(/revoked = TRUE/i);
+    expect(sweep[0]).toMatch(/last_activity <.*INTERVAL/i);
+    expect(sweep[1]).toContain(42);
+  });
+});
+
+/**
  * createSession: stores only hashes of the tokens (SR-18 — tokens never
  * persisted in raw form) plus source IP / user agent for the admin session view.
  */

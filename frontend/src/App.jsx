@@ -134,7 +134,14 @@ export default function App() {
           <Route path="/adm/sessions"  element={<AdminSessions />} />
           <Route path="/adm/chatlogs"  element={<AdminChatLogs />} />
           <Route path="/adm/logs"      element={<AdminLogs />} />
-          <Route path="/adm/profile" element={<UserProfile />} />
+          {/*
+            Admins get ONLY their own security controls — password change and
+            2FA. The full profile page (personal info) and self-service account
+            deletion are intentionally NOT exposed to admins: an admin edits
+            other users via the admin console, and account deletion is an
+            admin-only action applied to OTHER users, never to themselves
+            (enforced server-side in routes/users.js + admin.js).
+          */}
           <Route path="/adm/security/2fa" element={<TotpSetup />} />
           <Route path="/adm/security/password" element={<PasswordChange />} />
         </Route>

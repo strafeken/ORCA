@@ -66,6 +66,21 @@ router.patch('/me', authMiddleware, async (req, res) => {
       ...values,
       req.user.id,
     ]);
+
+    // SR-29: a profile update is a state-changing action on the user's own
+    // account and must be recorded in the audit trail. Previously this route
+    // returned successfully without logging anything, so profile edits were
+    // invisible in the audit log. resourceId is the affected user (self here);
+    // the changed field names go to the audit meta so a reviewer can see WHAT
+    // was updated without exposing the new values themselves.
+    audit.log({
+      userId: req.user.id,
+      actionType: 'profile_updated',
+      resourceType: 'user',
+      resourceId: req.user.id,
+      ip: req.ip,
+    });
+
     const [results] = await pool.query(
       'SELECT id, name, email, contact_number, bio, role, is_verified, is_approved, created_at FROM users WHERE id = ?',
       [req.user.id]
@@ -165,6 +180,16 @@ router.patch('/me/password', authMiddleware, async (req, res) => {
  * DELETE /api/users/me
  */
 router.delete('/me', authMiddleware, async (req, res) => {
+  // Admins cannot self-delete. Account deletion is an admin-only action applied
+  // to OTHER users through the admin console (routes/admin.js also blocks an
+  // admin deleting their own row). Enforcing it here — not just by hiding the
+  // /adm/account/delete page — is the real boundary (SR-25): the endpoint must
+  // reject a direct API call, otherwise removing the UI achieves nothing. (FR-05)
+  if (req.user.role === 'admin') {
+    audit.log({ userId: req.user.id, actionType: 'account_delete_denied_admin', resourceType: 'user', ip: req.ip, level: 'warn' });
+    return res.status(403).json({ error: 'Administrators cannot delete their own account.' });
+  }
+
   const { password } = req.body;
   if (typeof password !== 'string' || !password) {
     return res.status(400).json({ error: 'Password is required.' });
@@ -216,11 +241,16 @@ router.delete('/me', authMiddleware, async (req, res) => {
 
     await conn.commit();
 
+    // level: 'warn' — a self-service account deletion is a permanent,
+    // irreversible destruction of the record, exactly like the admin-initiated
+    // ADMIN_DELETE_USER path. It should stand out in the audit log viewer
+    // rather than blend in with routine info-level activity.
     audit.log({
       userId: req.user.id,
       actionType: 'account_deleted',
       resourceType: 'user',
-      ip: req.ip
+      ip: req.ip,
+      level: 'warn'
     });
 
     res.json({ message: 'Account deleted.' });
@@ -242,14 +272,17 @@ router.delete('/me', authMiddleware, async (req, res) => {
  */
 router.get('/me/2fa', authMiddleware, async (req, res) => {
   try {
+    // Only a CONFIRMED secret counts as 2FA enabled. A row that exists but was
+    // never confirmed (setup started, code never entered) reports as disabled,
+    // matching what login enforces via hasTotp.
     const [rows] = await pool.query(
-      'SELECT created_at FROM totp_secrets WHERE user_id = ? LIMIT 1',
+      'SELECT confirmed_at FROM totp_secrets WHERE user_id = ? AND confirmed_at IS NOT NULL LIMIT 1',
       [req.user.id]
     );
     if (!rows.length) {
       return res.json({ enabled: false, since: null });
     }
-    res.json({ enabled: true, since: rows[0].created_at });
+    res.json({ enabled: true, since: rows[0].confirmed_at });
   } catch (err) {
     console.error('2FA status error:', err);
     res.status(500).json({ error: 'Could not load 2FA status.' });

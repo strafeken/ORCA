@@ -29,12 +29,12 @@ export default function AppShell() {
 
   return (
     <div style={s.shell}>
-      <header style={s.bar}>
-        <Link to="/dashboard" style={{ textDecoration: "none" }}>
+      <header className="orca-appbar" style={s.bar}>
+        <Link to="/dashboard" className="orca-appbar-brand" style={{ textDecoration: "none" }}>
           <OrcaWordmark size={24} />
         </Link>
 
-        <nav style={s.links}>
+        <nav className="orca-appbar-nav" style={s.links}>
           {links
             .filter((l) => l.roles.includes(user?.role))
             .map((l) => (
@@ -80,6 +80,11 @@ const s = {
     borderBottom: "1px solid var(--orca-line)",
     background: "var(--orca-slate)",
     flexWrap: "wrap",
+    // Give the bar its own stacking context above the page content so the
+    // user-menu dropdown (an absolutely-positioned child) always paints on top
+    // instead of being covered by content below the navbar.
+    position: "relative",
+    zIndex: 100,
   },
   links: { display: "flex", gap: 22, flexGrow: 1 },
   link: { fontSize: 15, fontWeight: 600, textDecoration: "none" },

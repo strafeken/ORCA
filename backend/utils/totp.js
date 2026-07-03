@@ -63,16 +63,31 @@ async function setupTotp(user) {
 
   const encrypted = encrypt(secret.base32);
 
-  // Upsert into totp_secrets (UNIQUE on user_id).
+  // Upsert into totp_secrets (UNIQUE on user_id). confirmed_at is reset to NULL:
+  // generating a new secret always leaves 2FA in the "not yet proven" state
+  // until /totp/enable confirms a code. This is what stops a half-finished setup
+  // (QR generated, never scanned) from being treated as active at login.
   await pool.query(
-    `INSERT INTO totp_secrets (user_id, secret_encrypted)
-     VALUES (?, ?)
-     ON DUPLICATE KEY UPDATE secret_encrypted = VALUES(secret_encrypted)`,
+    `INSERT INTO totp_secrets (user_id, secret_encrypted, confirmed_at)
+     VALUES (?, ?, NULL)
+     ON DUPLICATE KEY UPDATE secret_encrypted = VALUES(secret_encrypted), confirmed_at = NULL`,
     [user.id, encrypted]
   );
 
   const qrDataUrl = await qrcode.toDataURL(secret.otpauth_url);
   return { qrDataUrl };
+}
+
+/**
+ * Mark a user's TOTP secret as confirmed — called from /totp/enable ONLY after
+ * verifyTotp() has accepted a real code. Until this runs, hasTotp() reports the
+ * user as NOT having 2FA, so login never prompts for a code they can't produce.
+ */
+async function confirmTotp(userId) {
+  await pool.query(
+    'UPDATE totp_secrets SET confirmed_at = NOW() WHERE user_id = ?',
+    [userId]
+  );
 }
 
 /**
@@ -103,11 +118,15 @@ async function verifyTotp(userId, code) {
 }
 
 /**
- * Whether the user has a TOTP secret on file (i.e. 2FA is set up).
+ * Whether the user has 2FA actually ENABLED, i.e. a secret that has been
+ * confirmed via /totp/enable. A secret that was generated but never confirmed
+ * (confirmed_at IS NULL) deliberately does NOT count — this is exactly what
+ * prevents a half-finished setup from prompting for a code at login and locking
+ * the user out.
  */
 async function hasTotp(userId) {
   const [rows] = await pool.query(
-    'SELECT 1 FROM totp_secrets WHERE user_id = ? LIMIT 1',
+    'SELECT 1 FROM totp_secrets WHERE user_id = ? AND confirmed_at IS NOT NULL LIMIT 1',
     [userId]
   );
   return rows.length > 0;
@@ -117,4 +136,4 @@ async function disableTotp(userId) {
   await pool.query('DELETE FROM totp_secrets WHERE user_id = ?', [userId]);
 }
 
-module.exports = { setupTotp, verifyTotp, hasTotp, disableTotp };
+module.exports = { setupTotp, confirmTotp, verifyTotp, hasTotp, disableTotp };

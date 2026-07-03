@@ -189,6 +189,120 @@ a:hover {
   .orca-login-brand { display: none; }
 }
 
+/* App navbar (AppShell) — declutter on small screens.
+   On phones the brand + account avatar sit on the first row (pushed to the
+   edges), and the nav links drop to their own full-width row below as a
+   compact, horizontally-scrollable pill strip instead of wrapping messily. */
+@media (max-width: 640px) {
+  .orca-appbar {
+    gap: 10px !important;
+    padding: 10px 16px !important;
+    justify-content: space-between;
+  }
+  .orca-appbar-nav {
+    order: 3;
+    flex-basis: 100%;
+    flex-grow: 0 !important;
+    gap: 6px !important;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;            /* Firefox: hide scrollbar */
+  }
+  .orca-appbar-nav::-webkit-scrollbar { display: none; } /* WebKit: hide scrollbar */
+  .orca-appbar-nav a {
+    white-space: nowrap;
+    padding: 6px 12px;
+    border-radius: var(--orca-radius-sm);
+    background: var(--orca-slate-2);
+    font-size: 14px !important;
+  }
+}
+
+/* Admin account menu: opens UPWARD by default because the avatar sits at the
+   bottom of the tall sidebar. Positioning lives here (not inline) so the mobile
+   top-bar layout below can flip it to open downward. */
+.orca-admin-usermenu-popover {
+  bottom: calc(100% + 10px);
+  left: 0;
+}
+
+/* Admin panel (AdminShell) — on phones the fixed 220px sidebar took most of the
+   width and content pages overflowed. Collapse the sidebar into a compact top
+   bar and give the content the full width below it. */
+@media (max-width: 640px) {
+  .orca-admin-shell { flex-direction: column !important; }
+  .orca-admin-sidebar {
+    width: 100% !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 8px !important;
+    padding: 8px 12px !important;
+    border-right: none !important;
+    border-bottom: 1px solid var(--orca-line) !important;
+  }
+  .orca-admin-brandrow {
+    padding: 0 !important;
+    border-bottom: none !important;
+    flex-shrink: 0 !important;
+  }
+  .orca-admin-nav {
+    flex-direction: row !important;
+    flex-grow: 1 !important;
+    gap: 4px !important;
+    padding: 0 !important;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .orca-admin-nav::-webkit-scrollbar { display: none; }
+  .orca-admin-nav a { white-space: nowrap; }
+  .orca-admin-foot {
+    padding: 0 !important;
+    border-top: none !important;
+    flex-shrink: 0 !important;
+  }
+  /* Avatar now sits at the top-right — open the menu downward and drop the
+     name/role text so the top bar stays compact. */
+  .orca-admin-usermenu-popover {
+    top: calc(100% + 10px);
+    bottom: auto;
+    right: 0;
+    left: auto;
+  }
+  .orca-admin-usermenu-text { display: none !important; }
+}
+
+/* User profile page — stack the vertical tab rail into a horizontal, scrollable
+   strip above the panel so it doesn't eat a chunk of the width on mobile. */
+@media (max-width: 640px) {
+  .orca-profile-layout {
+    flex-direction: column !important;
+    gap: 16px !important;
+  }
+  .orca-profile-tabs {
+    flex-direction: row !important;
+    min-width: 0 !important;
+    gap: 4px !important;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border-bottom: 1px solid var(--orca-line);
+  }
+  .orca-profile-tabs button { white-space: nowrap; }
+}
+
+/* Admin chat logs — the two-panel (conversation list + viewer) layout doesn't
+   fit a phone side-by-side, so the list panel used to hog the screen. On mobile
+   it becomes master-detail: show the list; once a conversation is selected show
+   the viewer full-width with a back button. */
+.orca-chatlog-back { display: none; }        /* desktop: shown inline both panels */
+@media (max-width: 640px) {
+  .orca-chatlog-panels { grid-template-columns: 1fr !important; }
+  .orca-chatlog-detail { display: none !important; }              /* hidden until a conversation is picked */
+  .orca-chatlog-panels.has-selection .orca-chatlog-list   { display: none !important; }
+  .orca-chatlog-panels.has-selection .orca-chatlog-detail { display: flex !important; }
+  .orca-chatlog-back { display: inline-flex !important; }
+}
+
 /* Consult chat mobile layout */
 .orca-thread-back-btn { display: none; }
 

@@ -179,6 +179,60 @@ async function registerFailedAttempt(user, ip = null) {
 }
 
 /**
+ * How many concurrent live sessions a single user may hold. The requirement
+ * (SR-23) is exactly one: a user who is already signed in somewhere must log
+ * out (or let that session idle out) before signing in again. Enforcing this
+ * closes the multi-device race that was breaking per-conversation call setup —
+ * a second concurrent session for the same account could hijack or duplicate
+ * the socket/WebRTC state and stop a call from starting.
+ */
+const MAX_CONCURRENT_SESSIONS = 1;
+
+// Mirrors authMiddleware's INACTIVITY_TIMEOUT_MS (15 min) and admin GET
+// /sessions. Kept as an inline SQL interval to match those call sites; if you
+// change the idle timeout, change it in all three places.
+const INACTIVITY_MINUTES = 15;
+
+/**
+ * Whether the user already holds the maximum number of live sessions, i.e.
+ * whether a new login must be refused to keep the one-session-per-user rule.
+ *
+ * "Live" here means exactly what authMiddleware and the admin session list
+ * treat as live: not revoked, not past the 2-hour absolute cap (expires_at),
+ * and not idle past the 15-minute inactivity timeout.
+ *
+ * We first lazily revoke any of THIS user's sessions that have gone idle past
+ * the timeout but haven't been touched since (e.g. they closed the tab without
+ * logging out). Without that sweep a stale row would lock a user out of their
+ * own account until the 2-hour absolute cap elapsed — the same lazy cleanup the
+ * admin session list already performs, scoped here to the one user.
+ *
+ * @param {number} userId
+ * @returns {Promise<boolean>} true if a live session already exists.
+ */
+async function hasActiveSession(userId) {
+  await pool.query(
+    `UPDATE sessions
+        SET revoked = TRUE
+      WHERE user_id = ?
+        AND revoked = FALSE
+        AND last_activity < (NOW() - INTERVAL ${INACTIVITY_MINUTES} MINUTE)`,
+    [userId]
+  );
+
+  const [rows] = await pool.query(
+    `SELECT COUNT(*) AS active
+       FROM sessions
+      WHERE user_id = ?
+        AND revoked = FALSE
+        AND expires_at > NOW()`,
+    [userId]
+  );
+
+  return rows[0].active >= MAX_CONCURRENT_SESSIONS;
+}
+
+/**
  * Create a session for an authenticated user: issue a short-lived access token
  * and a long-lived refresh token, and store ONLY their hashes (plus request
  * metadata) in the sessions table. The raw tokens are returned to the caller to
@@ -229,10 +283,12 @@ async function revokeSessionByAccessToken(accessToken) {
 
 module.exports = {
   authenticateUser,
+  hasActiveSession,
   createSession,
   revokeSessionByRefreshToken,
   revokeSessionByAccessToken,
   AuthResult,
   SOFT_LOCK_THRESHOLD,
   HARD_LOCK_THRESHOLD,
+  MAX_CONCURRENT_SESSIONS,
 };

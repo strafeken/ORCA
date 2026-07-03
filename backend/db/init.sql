@@ -65,6 +65,12 @@ CREATE TABLE IF NOT EXISTS totp_secrets (
     id INT(11) NOT NULL AUTO_INCREMENT,
     user_id INT(11) NOT NULL,
     secret_encrypted VARCHAR(255) NOT NULL,
+    -- NULL until the user proves they can generate a valid code (the /totp/enable
+    -- step). A row with confirmed_at IS NULL means "setup was started but never
+    -- completed" — the secret exists but 2FA is NOT active, so login must NOT
+    -- prompt for a code (otherwise a user who generated a QR but never scanned it
+    -- would be locked out). Only a non-NULL confirmed_at counts as 2FA enabled.
+    confirmed_at DATETIME DEFAULT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     UNIQUE KEY (user_id),

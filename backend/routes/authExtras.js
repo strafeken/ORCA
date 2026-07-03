@@ -5,7 +5,7 @@ const pool = require('../db/pool').promise();
 const { hashPassword, verifyPassword } = require('../utils/password');
 const { issueToken, consumeToken, peekToken } = require('../utils/oneTimeTokens');
 const { sendActionEmail } = require('../utils/mailer');
-const { setupTotp, verifyTotp, hasTotp, disableTotp } = require('../utils/totp');
+const { setupTotp, confirmTotp, verifyTotp, hasTotp, disableTotp } = require('../utils/totp');
 const { authMiddleware } = require('../middleware/authMiddleware');
 const { authLimiter } = require('../middleware/authRateLimiter');
 const { system, audit } = require('../utils/winstonLogger');
@@ -193,6 +193,9 @@ router.post('/totp/enable', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'Invalid code. Make sure your device clock is correct.' });
     }
     // The secret already exists (from setup); a verified code confirms it works.
+    // Mark it confirmed — this is the point at which 2FA becomes active and
+    // login will start requiring a code (hasTotp only counts confirmed secrets).
+    await confirmTotp(req.user.id);
     audit.log({ userId: req.user.id, actionType: 'totp_enabled', ip: req.ip });
     return res.json({ message: 'Two-factor authentication enabled.' });
   } catch (err) {

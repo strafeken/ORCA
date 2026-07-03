@@ -5,6 +5,7 @@ const pool = require('../db/pool').promise();
 const { hashPassword, passwordPolicyError } = require('../utils/password');
 const {
   authenticateUser,
+  hasActiveSession,
   createSession,
   revokeSessionByRefreshToken,
   revokeSessionByAccessToken,
@@ -197,6 +198,26 @@ async function handleLogin(req, res, { adminOnly }) {
         audit.log({ userId: user.id, actionType: 'totp_failed', ip: req.ip });
         return res.status(401).json({ error: 'Invalid TOTP code.', totpRequired: true });
       }
+    }
+
+    // One active session per user (SR-23). If this account already has a live
+    // session (on another device or tab), refuse the login instead of creating
+    // a second concurrent session — concurrent sessions were breaking
+    // per-conversation call setup. The user must log out there first, let that
+    // session idle out (15 min), or have an admin terminate it from the session
+    // dashboard. Checked AFTER full authentication (password + 2FA) so it never
+    // reveals session state to someone who hasn't proven the credentials.
+    if (await hasActiveSession(user.id)) {
+      audit.log({
+        userId: user.id,
+        actionType: adminOnly ? 'admin_login_blocked_active_session' : 'login_blocked_active_session',
+        resourceType: 'session',
+        ip: req.ip,
+        level: 'warn',
+      });
+      return res.status(409).json({
+        error: 'This account is already signed in on another device. Log out there first, or wait a few minutes and try again.',
+      });
     }
 
     const { accessToken, refreshToken } = await createSession(user, clientMeta(req));

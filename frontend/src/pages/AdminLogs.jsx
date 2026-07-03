@@ -2,6 +2,25 @@ import { useEffect, useState, useMemo, useCallback } from "react";
 import { apiFetch } from "../auth/api";
 
 /**
+ * Severity ordering used to float the most important entries to the top of the
+ * table: error first, then warn, then everything else (info / unknown). Written
+ * as a switch (not a lookup object keyed by the untrusted `level` string) to
+ * avoid the object-injection lint rule, same approach as LevelBadge below.
+ */
+function severityRank(level) {
+  switch ((level || "info").toLowerCase()) {
+    case "error": return 0;
+    case "warn":  return 1;
+    default:      return 2;
+  }
+}
+
+// How many log rows to show per page. The backend caps a fetch at 200 entries,
+// so this yields at most a handful of pages — enough to page through without
+// the table growing unboundedly tall.
+const PAGE_SIZE = 25;
+
+/**
  * AdminLogs — mounted at /adm/logs.
  *
  * Displays the full append-only audit and system event trail pulled from
@@ -47,6 +66,9 @@ export default function AdminLogs() {
   const [search, setSearch]     = useState("");
   const [actionFilter, setActionFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all"); // Create/Read/Update/Delete/Login/Other
+
+  // ── Pagination ─────────────────────────────────────────────────────
+  const [page, setPage] = useState(1);
 
   // ── Expanded rows ──────────────────────────────────────────────────
   const [expanded, setExpanded] = useState(new Set());
@@ -94,6 +116,7 @@ export default function AdminLogs() {
     setTab(nextTab);
     setActionFilter("all");
     setCategoryFilter("all");
+    setPage(1);
     setLoading(true);
   }
 
@@ -101,11 +124,13 @@ export default function AdminLogs() {
     setRange(nextRange);
     setActionFilter("all");
     setCategoryFilter("all");
+    setPage(1);
     setLoading(true);
   }
 
   // Used by the Refresh button (event handler — not subject to the rule).
   function refreshLogs() {
+    setPage(1);
     setLoading(true);
     fetchLogs();
   }
@@ -149,8 +174,23 @@ export default function AdminLogs() {
       );
     }
 
+    // Float elevated-severity entries to the top so warnings (and errors) are
+    // seen first instead of being buried at the bottom. Array.sort is stable,
+    // so within each severity level the existing newest-first order from Loki
+    // is preserved.
+    result.sort((a, b) => severityRank(a.level) - severityRank(b.level));
+
     return result;
   }, [logs, search, actionFilter, categoryFilter]);
+
+  // ── Current page slice ─────────────────────────────────────────────
+  // safePage clamps a possibly-stale page during render (e.g. filters shrank
+  // the result set) without needing a setState-in-effect. Page is reset to 1
+  // by the filter/tab/range/refresh handlers whenever the dataset changes.
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage   = Math.min(page, totalPages);
+  const pageStart  = (safePage - 1) * PAGE_SIZE;
+  const pageRows   = filtered.slice(pageStart, pageStart + PAGE_SIZE);
 
   // ── Toggle row expansion ───────────────────────────────────────────
   function toggleRow(idx) {
@@ -222,7 +262,7 @@ export default function AdminLogs() {
           type="search"
           placeholder="Search message, action, user ID, IP…"
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => { setSearch(e.target.value); setPage(1); }}
           style={s.searchInput}
           aria-label="Search logs"
         />
@@ -231,7 +271,7 @@ export default function AdminLogs() {
         {tab !== "system" && (
           <select
             value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
+            onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); }}
             style={s.select}
             aria-label="Filter by category"
           >
@@ -247,7 +287,7 @@ export default function AdminLogs() {
         {tab !== "system" && (
           <select
             value={actionFilter}
-            onChange={(e) => setActionFilter(e.target.value)}
+            onChange={(e) => { setActionFilter(e.target.value); setPage(1); }}
             style={s.select}
             aria-label="Filter by action type"
           >
@@ -309,14 +349,24 @@ export default function AdminLogs() {
                 {tab !== "system" && (
                   <>
                     <th style={{ ...s.th, width: 90  }}>Category</th>
-                    <th style={{ ...s.th, width: 170 }}>Action Type</th>
+                    {/* Audit tab shows the Action Type; the All tab shows the raw
+                        Message instead, so system-log lines (which have no action
+                        type) still show their text alongside audit entries. */}
+                    {tab === "audit" ? (
+                      <th style={{ ...s.th, width: 170 }}>Action Type</th>
+                    ) : (
+                      <th style={s.th}>Message</th>
+                    )}
                     <th style={{ ...s.th, width: 72  }}>User ID</th>
                     <th style={{ ...s.th, width: 130 }}>Resource</th>
                     <th style={{ ...s.th, width: 110 }}>IP</th>
                   </>
                 )}
                 {tab === "system" && (
-                  <th style={s.th}>Message</th>
+                  <>
+                    <th style={{ ...s.th, width: 72 }}>User ID</th>
+                    <th style={s.th}>Message</th>
+                  </>
                 )}
                 <th style={{ ...s.th, width: 40, textAlign: "center" }}>
                   ↕
@@ -324,21 +374,51 @@ export default function AdminLogs() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((log, idx) => (
-                <LogRow
-                  key={idx}
-                  log={log}
-                  idx={idx}
-                  tab={tab}
-                  expanded={expanded.has(idx)}
-                  onToggle={toggleRow}
-                  fmtTs={fmtTs}
-                />
-              ))}
+              {pageRows.map((log, i) => {
+                // Absolute index into `filtered` so expand/collapse tracking is
+                // stable across pages, not just within the current slice.
+                const idx = pageStart + i;
+                return (
+                  <LogRow
+                    key={idx}
+                    log={log}
+                    idx={idx}
+                    tab={tab}
+                    expanded={expanded.has(idx)}
+                    onToggle={toggleRow}
+                    fmtTs={fmtTs}
+                  />
+                );
+              })}
             </tbody>
           </table>
         )}
       </div>
+
+      {/* ── Pagination controls ───────────────────────────────── */}
+      {!loading && filtered.length > 0 && (
+        <div style={s.pagination}>
+          <button
+            style={{ ...s.pageBtn, ...(safePage <= 1 ? s.pageBtnDisabled : {}) }}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={safePage <= 1}
+          >
+            ← Prev
+          </button>
+          <span style={s.pageInfo}>
+            Page {safePage} of {totalPages}
+            {" · "}
+            {pageStart + 1}–{Math.min(pageStart + PAGE_SIZE, filtered.length)} of {filtered.length}
+          </span>
+          <button
+            style={{ ...s.pageBtn, ...(safePage >= totalPages ? s.pageBtnDisabled : {}) }}
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            disabled={safePage >= totalPages}
+          >
+            Next →
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -351,8 +431,12 @@ export default function AdminLogs() {
  * investigating an incident.
  */
 function LogRow({ log, idx, tab, expanded, onToggle, fmtTs }) {
-  // Column count per tab: ts + level (+ job on all/system) (+ msg/category/action/userId/ip on audit/all) + expand
-  const colSpan = tab === "all" ? 9 : tab === "audit" ? 8 : 4;
+  // Column count per tab (must match the <th> set in the table header so the
+  // expanded-payload row spans the full width):
+  //   audit  = ts, level, category, action, userId, resource, ip, expand      → 8
+  //   all    = ts, level, job, category, action, userId, resource, ip, expand → 9
+  //   system = ts, level, job, userId, message, expand                        → 6
+  const colSpan = tab === "all" ? 9 : tab === "audit" ? 8 : 6;
 
   return (
     <>
@@ -396,12 +480,18 @@ function LogRow({ log, idx, tab, expanded, onToggle, fmtTs }) {
             <td style={{ ...s.td, maxWidth: 90 }}>
               <CategoryBadge category={log.category} />
             </td>
-            <td style={{ ...s.td, maxWidth: 170 }}>
-              {log.actionType
-                ? <ActionBadge action={log.actionType} />
-                : "—"
-              }
-            </td>
+            {tab === "audit" ? (
+              <td style={{ ...s.td, maxWidth: 170 }}>
+                {log.actionType
+                  ? <ActionBadge action={log.actionType} />
+                  : "—"
+                }
+              </td>
+            ) : (
+              <td style={{ ...s.td, maxWidth: 320 }}>
+                <span style={s.msgText}>{log.msg || "—"}</span>
+              </td>
+            )}
             <td style={{ ...s.td, fontSize: 11.5, color: "var(--orca-muted)" }}>
               {log.userId ?? "—"}
             </td>
@@ -426,11 +516,16 @@ function LogRow({ log, idx, tab, expanded, onToggle, fmtTs }) {
           </>
         )}
 
-        {/* System message column */}
+        {/* System User ID + message columns */}
         {tab === "system" && (
-          <td style={{ ...s.td, maxWidth: 500 }}>
-            <span style={s.msgText}>{log.msg || "—"}</span>
-          </td>
+          <>
+            <td style={{ ...s.td, fontSize: 11.5, color: "var(--orca-muted)" }}>
+              {log.userId ?? "—"}
+            </td>
+            <td style={{ ...s.td, maxWidth: 500 }}>
+              <span style={s.msgText}>{log.msg || "—"}</span>
+            </td>
+          </>
         )}
 
         {/* Expand toggle */}
@@ -698,10 +793,15 @@ const s = {
   tableWrapper: {
     border: "1px solid var(--orca-line)",
     borderRadius: 10,
-    overflow: "hidden",
+    // Scroll horizontally instead of clipping — the audit/all tabs have 8–9
+    // columns that don't fit a phone, so they'd otherwise be cut off.
+    overflowX: "auto",
   },
   table: {
     width: "100%",
+    // Keep the columns readable and let the wrapper scroll on narrow screens
+    // rather than crushing everything. On desktop the table just fills 100%.
+    minWidth: 760,
     borderCollapse: "collapse",
     fontSize: 12.5,
   },
@@ -733,6 +833,34 @@ const s = {
     textAlign: "center",
     color: "var(--orca-muted)",
     fontSize: 13,
+  },
+
+  /* Pagination */
+  pagination: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 16,
+    marginTop: 14,
+  },
+  pageBtn: {
+    fontSize: 13,
+    padding: "7px 14px",
+    borderRadius: 8,
+    border: "1px solid var(--orca-line)",
+    background: "var(--orca-slate)",
+    color: "var(--orca-ink)",
+    cursor: "pointer",
+  },
+  pageBtnDisabled: {
+    opacity: 0.4,
+    cursor: "not-allowed",
+  },
+  pageInfo: {
+    fontSize: 12.5,
+    color: "var(--orca-muted)",
+    fontVariantNumeric: "tabular-nums",
+    whiteSpace: "nowrap",
   },
 
   /* Badges & pills */

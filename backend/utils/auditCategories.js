@@ -39,12 +39,24 @@ const ACTION_CATEGORY_MAP = {
   // ── Read ────────────────────────────────────────────────────────────
   ADMIN_LIST_USERS: CATEGORY.READ,
   ADMIN_READ_CHAT_LOG: CATEGORY.READ,
+  // Downloading a stored artifact is a read of conversation content.
+  FILE_DOWNLOADED: CATEGORY.READ,
+  VOICE_MESSAGE_DOWNLOADED: CATEGORY.READ,
+  // Admin viewing conversation media from the chat-log moderation screen.
+  ADMIN_DOWNLOAD_FILE: CATEGORY.READ,
+  ADMIN_DOWNLOAD_VOICE: CATEGORY.READ,
 
   // ── Update ──────────────────────────────────────────────────────────
   email_verified: CATEGORY.UPDATE,
   password_reset_completed: CATEGORY.UPDATE,
   totp_enabled: CATEGORY.UPDATE,
   totp_disabled: CATEGORY.UPDATE,
+  // Self-service profile / credential changes (FR-04). Both the successful
+  // change and a failed attempt are Update actions on the user's own account —
+  // previously unmapped, so they were falling through to 'Other'.
+  profile_updated: CATEGORY.UPDATE,
+  password_changed: CATEGORY.UPDATE,
+  password_change_failed: CATEGORY.UPDATE,
   ADMIN_APPROVE_EXPERT: CATEGORY.UPDATE,
   ADMIN_REVOKE_EXPERT: CATEGORY.UPDATE,
   ADMIN_UNLOCK_ACCOUNT: CATEGORY.UPDATE,
@@ -57,6 +69,11 @@ const ACTION_CATEGORY_MAP = {
   // ── Delete ──────────────────────────────────────────────────────────
   ADMIN_DELETE_USER: CATEGORY.DELETE,
   ADMIN_DELETE_CHAT_LOG: CATEGORY.DELETE,
+  // Self-service account deletion (FR-04/FR-05), its failed-password attempt,
+  // and an admin being refused self-deletion at the endpoint.
+  account_deleted: CATEGORY.DELETE,
+  account_delete_failed: CATEGORY.DELETE,
+  account_delete_denied_admin: CATEGORY.DELETE,
 
   // ── Login (covers the full session/credential lifecycle: login attempts,
   //    logout, session termination, and the password-reset *request* step —
@@ -72,6 +89,13 @@ const ACTION_CATEGORY_MAP = {
   USER_LOGOUT: CATEGORY.LOGIN,
   password_reset_requested: CATEGORY.LOGIN,
   ADMIN_TERMINATE_SESSION: CATEGORY.LOGIN,
+  // Re-authentication before a sensitive operation is a credential check,
+  // grouped with the rest of the session/credential lifecycle.
+  reauth_failed: CATEGORY.LOGIN,
+  // A login refused because the account already has an active session
+  // (SR-23 one-session-per-user enforcement).
+  login_blocked_active_session: CATEGORY.LOGIN,
+  admin_login_blocked_active_session: CATEGORY.LOGIN,
 };
 
 /**

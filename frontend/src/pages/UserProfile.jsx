@@ -55,8 +55,8 @@ export default function UserProfile() {
   if (error) return <p style={{ ...s.sub, color: "var(--orca-danger, #e05a5a)" }}>{error}</p>;
 
   return (
-    <div style={isAdmin ? s.layoutStacked : s.layout}>
-     <nav style={isAdmin ? s.tabListHorizontal : s.tabList}>
+    <div className="orca-profile-layout" style={isAdmin ? s.layoutStacked : s.layout}>
+     <nav className="orca-profile-tabs" style={isAdmin ? s.tabListHorizontal : s.tabList}>
         {TABS.map((t) => (
           <button
             key={t.id}

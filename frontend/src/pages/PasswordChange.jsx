@@ -13,10 +13,14 @@ export default function PasswordChange() {
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
 
-  const location = useLocation();                          
-  const isAdmin = location.pathname.startsWith("/adm");    
+  const location = useLocation();
+  const isAdmin = location.pathname.startsWith("/adm");
   const paths = securityPaths(isAdmin);
-  
+
+  // Admins have no profile hub — send them back to the admin dashboard.
+  const backTo = isAdmin ? "/adm/managementDashboard" : `${paths.profile}?tab=security`;
+  const backLabel = isAdmin ? "← Back to Dashboard" : "← Back to Security";
+
   async function handleReauth(e) {
     e.preventDefault();
     setError(null);
@@ -68,8 +72,8 @@ export default function PasswordChange() {
 
   return (
     <div style={{ maxWidth: 380, margin: "0 auto" }}>
-      <Link to={`${paths.profile}?tab=security`} style={s.backLink}>
-        ← Back to Security
+      <Link to={backTo} style={s.backLink}>
+        {backLabel}
       </Link>
       <h1 style={s.h1}>Change password</h1>
 

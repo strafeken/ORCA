@@ -18,9 +18,13 @@ export default function TotpSetup() {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  const location = useLocation();                          
-  const isAdmin = location.pathname.startsWith("/adm");    
+  const location = useLocation();
+  const isAdmin = location.pathname.startsWith("/adm");
   const paths = securityPaths(isAdmin);
+
+  // Admins have no profile hub — send them back to the admin dashboard.
+  const backTo = isAdmin ? "/adm/managementDashboard" : `${paths.profile}?tab=security`;
+  const backLabel = isAdmin ? "← Back to Dashboard" : "← Back to Security";
 
   async function startSetup() {
     setError(null);
@@ -60,8 +64,8 @@ export default function TotpSetup() {
 
   return (
     <div style={{ maxWidth: 460, margin: "0 auto" }}>
-       <Link to={`${paths.profile}?tab=security`} style={s.backLink}>
-        ← Back to Security
+       <Link to={backTo} style={s.backLink}>
+        {backLabel}
       </Link>
       <h1 style={s.h1}>Two-factor authentication</h1>
       <p style={s.sub}>

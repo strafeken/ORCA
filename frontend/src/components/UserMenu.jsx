@@ -95,12 +95,15 @@ const s = {
     top: "calc(100% + 10px)",
     right: 0,
     width: 260,
+    // Never exceed the viewport on a narrow phone (avatar sits at the right
+    // edge, so the popover extends leftward from there).
+    maxWidth: "calc(100vw - 24px)",
     background: "var(--orca-slate)",
     border: "1px solid var(--orca-line)",
     borderRadius: "var(--orca-radius)",
     boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
     padding: 14,
-    zIndex: 50,
+    zIndex: 200,
   },
   popoverHeader: { display: "flex", alignItems: "center", gap: 12, marginBottom: 8 },
   popoverName: { fontSize: 14, fontWeight: 600, color: "var(--orca-ink)" },

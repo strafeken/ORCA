@@ -24,7 +24,7 @@ export default function AdminMenu({ user, onLogout }) {
   return (
     <div ref={rootRef} style={s.root}>
       {open && (
-        <div style={s.popover} role="menu">
+        <div className="orca-admin-usermenu-popover" style={s.popover} role="menu">
           <div style={s.popoverHeader}>
             <div style={s.avatarBtn}>{initial}</div>
             <div style={{ minWidth: 0 }}>
@@ -33,8 +33,11 @@ export default function AdminMenu({ user, onLogout }) {
             </div>
           </div>
           <div style={s.divider} />
-          <Link to="/adm/profile" style={s.menuItem} onClick={() => setOpen(false)}>
-            Profile
+          <Link to="/adm/security/password" style={s.menuItem} onClick={() => setOpen(false)}>
+            Change password
+          </Link>
+          <Link to="/adm/security/2fa" style={s.menuItem} onClick={() => setOpen(false)}>
+            Two-factor authentication
           </Link>
           <button
             onClick={() => {
@@ -50,7 +53,7 @@ export default function AdminMenu({ user, onLogout }) {
 
       <button onClick={() => setOpen((v) => !v)} style={s.trigger} aria-haspopup="true" aria-expanded={open}>
         <div style={s.avatarBtn}>{initial}</div>
-        <div style={s.triggerText}>
+        <div className="orca-admin-usermenu-text" style={s.triggerText}>
           <span style={s.userName}>{user?.name}</span>
           <span style={s.userRole}>administrator</span>
         </div>
@@ -97,16 +100,18 @@ const s = {
   },
   userRole: { fontSize: 10, color: "var(--orca-muted)", textTransform: "uppercase", letterSpacing: "0.06em" },
   popover: {
+    // Positioning (top/bottom/left/right) lives in orca.css under
+    // .orca-admin-usermenu-popover so a media query can flip the menu from
+    // opening upward (desktop sidebar) to downward (mobile top bar).
     position: "absolute",
-    bottom: "calc(100% + 10px)",
-    left: 0,
     width: 220,
+    maxWidth: "calc(100vw - 24px)",
     background: "var(--orca-slate)",
     border: "1px solid var(--orca-line)",
     borderRadius: "var(--orca-radius)",
     boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
     padding: 12,
-    zIndex: 50,
+    zIndex: 200,
   },
   popoverHeader: { display: "flex", alignItems: "center", gap: 10, marginBottom: 8 },
   popoverName: { fontSize: 13, fontWeight: 600, color: "var(--orca-ink)" },
