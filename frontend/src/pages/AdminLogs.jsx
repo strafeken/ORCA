@@ -220,7 +220,7 @@ export default function AdminLogs() {
         <div>
           <h1 style={s.title}>Audit &amp; System Logs</h1>
           <p style={s.subtitle}>
-            Append-only security and event trail via Loki · read-only (SR-30)
+            Security and event trail via Loki
           </p>
         </div>
         <div style={s.headerRight}>
