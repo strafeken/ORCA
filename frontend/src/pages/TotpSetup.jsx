@@ -1,5 +1,8 @@
 import { useState } from "react";
 import { apiFetch } from "../auth/api";
+import { Link } from "react-router-dom";
+import { useLocation } from "react-router-dom";
+import { securityPaths } from "../auth/securityPaths"; 
 
 /**
  * TOTP (2FA) setup page — for a logged-in user to enable two-factor auth.
@@ -14,6 +17,10 @@ export default function TotpSetup() {
   const [status, setStatus] = useState("idle"); // idle | setup | enabled
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
+
+  const location = useLocation();                          
+  const isAdmin = location.pathname.startsWith("/adm");    
+  const paths = securityPaths(isAdmin);
 
   async function startSetup() {
     setError(null);
@@ -53,6 +60,9 @@ export default function TotpSetup() {
 
   return (
     <div style={{ maxWidth: 460, margin: "0 auto" }}>
+       <Link to={`${paths.profile}?tab=security`} style={s.backLink}>
+        ← Back to Security
+      </Link>
       <h1 style={s.h1}>Two-factor authentication</h1>
       <p style={s.sub}>
         Add an extra layer of security. You'll enter a code from your authenticator app each time
@@ -110,4 +120,13 @@ const s = {
   h1: { fontSize: 30, fontWeight: 700, letterSpacing: "-0.5px", margin: "0 0 10px", color: "var(--orca-paper)" },
   sub: { fontSize: 15, lineHeight: 1.5, color: "var(--orca-muted)", margin: "0 0 24px", maxWidth: 420 },
   step: { fontSize: 15, color: "var(--orca-ink)", margin: "20px 0 12px", fontWeight: 600 },
+  backLink: {
+    display: "inline-block",
+    color: "var(--orca-hi)",
+    fontSize: 13,
+    fontWeight: 600,
+    textDecoration: "none",
+    marginBottom: 16,
+  },
 };
+

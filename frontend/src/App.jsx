@@ -14,6 +14,9 @@ import Dashboard from "./pages/Dashboard";
 import ConsultExpert from "./pages/ConsultExpert";
 import ExpertDirectory from "./pages/ExpertDirectory";
 import NotFound from "./pages/NotFound";
+import UserProfile from "./pages/UserProfile";
+import PasswordChange from "./pages/PasswordChange";
+import DeleteAccount from "./pages/DeleteAccount";
 
 // Admin pages
 import AdminLogin from "./pages/AdminLogin";
@@ -40,6 +43,9 @@ import AdminLogs from "./pages/AdminLogs";
  *                    /security/2fa           -> TotpSetup
  *                    /consult                -> ConsultExpert (worker + expert)
  *                    /experts                -> ExpertDirectory (workers only)
+ *                    /profile                -> UserProfile 
+ *                    /security/password      -> PasswordChange
+ *                    /account/delete         -> DeleteAccount
  *
  *  Admin only, inside AdminShell:
  *                    /adm/managementDashboard -> AdminDashboard
@@ -87,7 +93,11 @@ export default function App() {
       <Route element={<RequireAuth />}>
         <Route element={<AppShell />}>
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/profile" element={<UserProfile />} />
           <Route path="/security/2fa" element={<TotpSetup />} />
+          <Route path="/security/password" element={<PasswordChange />} />
+          <Route path="/account/delete" element={<DeleteAccount />} />
+
 
           <Route element={<RequireRole roles={["worker", "expert"]} />}>
             <Route path="/consult" element={<ConsultExpert />} />
@@ -124,6 +134,10 @@ export default function App() {
           <Route path="/adm/sessions"  element={<AdminSessions />} />
           <Route path="/adm/chatlogs"  element={<AdminChatLogs />} />
           <Route path="/adm/logs"      element={<AdminLogs />} />
+          <Route path="/adm/profile" element={<UserProfile />} />
+          <Route path="/adm/security/2fa" element={<TotpSetup />} />
+          <Route path="/adm/security/password" element={<PasswordChange />} />
+          <Route path="/adm/account/delete" element={<DeleteAccount />} />
         </Route>
       </Route>
 

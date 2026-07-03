@@ -1,6 +1,7 @@
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/useAuth";
 import { OrcaWordmark } from "./Brand";
+import UserMenu from "./UserMenu";
 
 /**
  * AppShell — the layout every authenticated page renders inside.
@@ -50,7 +51,7 @@ export default function AppShell() {
             ))}
         </nav>
 
-        <div style={s.userBox}>
+        {/* <div style={s.userBox}>
           <span style={s.userName}>{user?.name}</span>
           <span className="orca-code" style={s.roleTag}>
             {user?.role}
@@ -58,7 +59,8 @@ export default function AppShell() {
           <button onClick={handleLogout} className="orca-btn orca-btn--ghost" style={{ minHeight: 40 }}>
             Sign out
           </button>
-        </div>
+        </div> */}
+        <UserMenu user={user} onLogout={handleLogout} />
       </header>
 
       <main style={s.content}>
