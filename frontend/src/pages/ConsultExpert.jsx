@@ -143,8 +143,11 @@ export default function ConsultExpert() {
   }
 
   return (
-    <div style={s.layout}>
-      <aside style={s.sidebar}>
+    <div className="orca-consult-layout" style={s.layout}>
+      <aside
+        className={`orca-consult-sidebar${!selected ? " orca-mobile-active" : ""}`}
+        style={s.sidebar}
+      >
         <div style={s.sidebarHead}>
           <h1 style={s.sidebarTitle}>{isWorker ? "Consult an expert" : "Worker requests"}</h1>
           {isWorker && (
@@ -153,6 +156,7 @@ export default function ConsultExpert() {
         </div>
 
         <input
+          className="orca-consult-search"
           style={s.search}
           placeholder="Search…"
           value={search}
@@ -226,13 +230,17 @@ export default function ConsultExpert() {
         )}
       </aside>
 
-      <main style={s.main}>
+      <main
+        className={`orca-consult-main${selected ? " orca-mobile-active" : ""}`}
+        style={s.main}
+      >
         {selected && selectedCounterpart ? (
           <ConsultThread
             key={selectedId}
             conversationId={selectedId}
             counterpart={selectedCounterpart}
             onCallActiveChange={handleCallActiveChange}
+            onBack={() => selectConversation(null)}
           />
         ) : (
           <div style={s.emptyMain}>

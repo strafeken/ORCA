@@ -34,7 +34,7 @@ const RING_TIMEOUT_MS = 30000; // auto-cancel an unanswered outgoing call
 // warn before the user leaves and to gate the leave guard.
 const ACTIVE_CALL_STATES = ["ringing", "connecting", "in-call"];
 
-export default function ConsultThread({ conversationId, counterpart, onCallActiveChange }) {
+export default function ConsultThread({ conversationId, counterpart, onCallActiveChange, onBack }) {
   const convId = conversationId;
   const { user, token } = useAuth();
 
@@ -795,10 +795,21 @@ export default function ConsultThread({ conversationId, counterpart, onCallActiv
 
   return (
     <div style={s.thread}>
-      <div style={s.header}>
-        <div>
-          <h2 style={s.name}>{counterpart?.name}</h2>
-          {counterpart?.bio && <p style={s.bio}>{counterpart.bio}</p>}
+      <div className="orca-thread-header" style={s.header}>
+        <div style={s.headerLeft}>
+          <button
+            type="button"
+            className="orca-thread-back-btn"
+            onClick={onBack}
+            aria-label="Back to conversations"
+            title="Back to conversations"
+          >
+            ←
+          </button>
+          <div style={s.headerTitles}>
+            <h2 style={s.name}>{counterpart?.name}</h2>
+            {counterpart?.bio && <p className="orca-thread-bio" style={s.bio}>{counterpart.bio}</p>}
+          </div>
         </div>
         <div style={s.headerActions}>
           <span style={s.statusDot(counterpartOnline)} title={counterpartOnline ? "Online" : "Offline"} />
@@ -807,6 +818,7 @@ export default function ConsultThread({ conversationId, counterpart, onCallActiv
           </span>
           {callStatus === "idle" ? (
             <button
+              className="orca-call-btn"
               style={{ ...s.callBtn, ...(!counterpartOnline ? s.callBtnDisabled : {}) }}
               onClick={startCall}
               disabled={status !== "connected" || !counterpartOnline}
@@ -815,11 +827,11 @@ export default function ConsultThread({ conversationId, counterpart, onCallActiv
               Video call
             </button>
           ) : callStatus === "incoming" ? null : callStatus === "ringing" ? (
-            <button style={s.hangupBtn} onClick={() => cancelCall()}>
+            <button className="orca-hangup-btn" style={s.hangupBtn} onClick={() => cancelCall()}>
               Cancel
             </button>
           ) : (
-            <button style={s.hangupBtn} onClick={hangUp}>
+            <button className="orca-hangup-btn" style={s.hangupBtn} onClick={hangUp}>
               {callStatus === "in-call" ? "End call" : "Cancel"}
             </button>
           )}
@@ -848,8 +860,8 @@ export default function ConsultThread({ conversationId, counterpart, onCallActiv
 
       {showVideo && (
         <>
-          <div style={s.videoGrid}>
-            <div style={s.videoBox}>
+          <div className="orca-video-grid" style={s.videoGrid}>
+            <div className="orca-video-box" style={s.videoBox}>
               <video ref={localVideoRef} style={s.video} autoPlay muted playsInline />
               <canvas ref={localCanvasRef} style={s.annotationCanvas(false)} />
               <span style={s.videoLabel}>You</span>
@@ -865,7 +877,7 @@ export default function ConsultThread({ conversationId, counterpart, onCallActiv
                 </button>
               )}
             </div>
-            <div style={s.videoBox}>
+            <div className="orca-video-box" style={s.videoBox}>
               <video ref={remoteVideoRef} style={s.video} autoPlay playsInline />
               <canvas
                 ref={remoteCanvasRef}
@@ -906,7 +918,7 @@ export default function ConsultThread({ conversationId, counterpart, onCallActiv
         </>
       )}
 
-      <div style={s.chatBox}>
+      <div className="orca-chat-box" style={s.chatBox}>
         {messages.length === 0 && (
           <p style={s.emptyChat}>No messages yet — say hello to start.</p>
         )}
@@ -940,7 +952,7 @@ export default function ConsultThread({ conversationId, counterpart, onCallActiv
         <div ref={bottomRef} />
       </div>
 
-      <div style={s.inputRow}>
+      <div className="orca-input-row" style={s.inputRow}>
         <input
           ref={fileInputRef}
           type="file"
@@ -949,6 +961,7 @@ export default function ConsultThread({ conversationId, counterpart, onCallActiv
           onChange={handleFileSelected}
         />
         <button
+          className="orca-icon-btn"
           style={s.iconBtn}
           onClick={() => fileInputRef.current?.click()}
           disabled={status !== "connected" || uploading}
@@ -957,6 +970,7 @@ export default function ConsultThread({ conversationId, counterpart, onCallActiv
           📎
         </button>
         <button
+          className="orca-icon-btn"
           style={{ ...s.iconBtn, ...(recording ? s.iconBtnActive : {}) }}
           onClick={() => (recording ? stopRecording() : startRecording())}
           disabled={status !== "connected" || uploading}
@@ -965,6 +979,7 @@ export default function ConsultThread({ conversationId, counterpart, onCallActiv
           {recording ? `⏹ ${recordSeconds}s` : "🎙️"}
         </button>
         <input
+          className="orca-thread-input"
           style={s.input}
           placeholder={status === "connected" ? "Message…" : "Connecting…"}
           value={input}
@@ -972,7 +987,7 @@ export default function ConsultThread({ conversationId, counterpart, onCallActiv
           onKeyDown={handleKeyDown}
           disabled={status !== "connected"}
         />
-        <button style={s.sendBtn} onClick={sendMessage} disabled={status !== "connected" || !input.trim()}>
+        <button className="orca-send-btn" style={s.sendBtn} onClick={sendMessage} disabled={status !== "connected" || !input.trim()}>
           Send
         </button>
       </div>
@@ -1064,6 +1079,8 @@ const s = {
     display: "flex", justifyContent: "space-between", alignItems: "flex-start",
     gap: 12, padding: "16px 20px", borderBottom: "1px solid var(--orca-line)", flexShrink: 0,
   },
+  headerLeft: { display: "flex", alignItems: "flex-start", gap: 10, minWidth: 0 },
+  headerTitles: { minWidth: 0 },
   name: { fontSize: 18, fontWeight: 600, margin: "0 0 4px", color: "var(--orca-paper)" },
   bio: { fontSize: 12, color: "var(--orca-muted)", margin: 0, lineHeight: 1.4, maxWidth: 360 },
   headerActions: { display: "flex", alignItems: "center", gap: 8, flexShrink: 0 },

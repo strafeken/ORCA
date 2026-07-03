@@ -188,3 +188,169 @@ a:hover {
 @media (max-width: 720px) {
   .orca-login-brand { display: none; }
 }
+
+/* Consult chat mobile layout */
+.orca-thread-back-btn { display: none; }
+
+@media (max-width: 760px) {
+  .orca-consult-layout {
+    flex-direction: column !important;
+    height: calc(100svh - 56px) !important;
+    margin: -16px !important;
+    border-radius: 0 !important;
+    overflow: hidden !important;
+  }
+
+  .orca-consult-sidebar {
+    display: none !important;
+    width: 100% !important;
+    border-right: none !important;
+  }
+
+  .orca-consult-sidebar.orca-mobile-active {
+    display: flex !important;
+  }
+
+  .orca-consult-main {
+    display: none !important;
+    width: 100% !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+  }
+
+  .orca-consult-main.orca-mobile-active {
+    display: flex !important;
+  }
+
+  .orca-thread-back-btn {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
+    border-radius: 10px;
+    border: 1px solid var(--orca-line);
+    background: var(--orca-slate);
+    color: var(--orca-ink);
+    font-size: 18px;
+  }
+
+  .orca-thread-header {
+    padding: 10px 12px !important;
+    gap: 8px !important;
+  }
+
+  .orca-thread-bio {
+    display: none !important;
+  }
+
+  .orca-chat-box {
+    margin: 8px 10px !important;
+    padding: 10px !important;
+    min-height: 0 !important;
+  }
+
+  .orca-input-row {
+    display: grid !important;
+    grid-template-columns: 44px 44px minmax(0, 1fr) auto;
+    gap: 8px !important;
+    align-items: center !important;
+    padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px)) !important;
+    background: var(--orca-slate);
+    border-top: 1px solid var(--orca-line);
+  }
+
+  .orca-icon-btn {
+    width: 44px !important;
+    height: 44px !important;
+    min-width: 44px !important;
+    padding: 0 !important;
+    font-size: 17px !important;
+  }
+
+  .orca-thread-input {
+    min-width: 0 !important;
+    width: 100% !important;
+    height: 44px !important;
+    font-size: 16px !important;
+    padding: 0 12px !important;
+  }
+
+  .orca-send-btn {
+    height: 44px !important;
+    min-width: 64px !important;
+    padding: 0 14px !important;
+    font-size: 14px !important;
+  }
+
+  .orca-consult-search {
+    font-size: 16px !important;
+  }
+
+  .orca-video-grid {
+    grid-template-columns: 1fr !important;
+    padding: 8px 10px 0 !important;
+  }
+
+  .orca-video-box {
+    aspect-ratio: 4 / 3 !important;
+  }
+}
+
+/* Very small portrait phones */
+@media (max-width: 420px) and (orientation: portrait) {
+  .orca-input-row {
+    grid-template-columns: 42px 42px minmax(0, 1fr) 56px;
+    gap: 6px !important;
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+  }
+
+  .orca-icon-btn {
+    width: 42px !important;
+    height: 42px !important;
+    min-width: 42px !important;
+  }
+
+  .orca-send-btn {
+    min-width: 56px !important;
+    padding: 0 10px !important;
+  }
+}
+
+/* Mobile landscape */
+@media (max-width: 900px) and (orientation: landscape) {
+  .orca-consult-layout {
+    height: calc(100svh - 48px) !important;
+  }
+
+  .orca-thread-header {
+    padding: 6px 12px !important;
+  }
+
+  .orca-thread-bio {
+    display: none !important;
+  }
+
+  .orca-chat-box {
+    margin: 6px 10px !important;
+    padding: 8px !important;
+  }
+
+  .orca-input-row {
+    grid-template-columns: 44px 44px minmax(0, 1fr) 70px;
+    padding: 6px 10px calc(6px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  .orca-video-grid {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 6px !important;
+    padding: 6px 10px 0 !important;
+  }
+
+  .orca-video-box {
+    aspect-ratio: auto !important;
+    height: 26vh !important;
+  }
+}
