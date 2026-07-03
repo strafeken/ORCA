@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../auth/api";
 import { Link, useSearchParams } from "react-router-dom"; 
+import { useLocation } from "react-router-dom"; 
+import { securityPaths } from "../auth/securityPaths";
 
 const TABS = [
   { id: "personal", label: "Personal info" },
@@ -15,6 +17,10 @@ export default function UserProfile() {
   const [profile, setProfile] = useState(null);       
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  const location = useLocation();                          
+  const isAdmin = location.pathname.startsWith("/adm");     
+  const paths = securityPaths(isAdmin);   
 
   function selectTab(id) {
     setTab(id);
@@ -47,15 +53,15 @@ export default function UserProfile() {
   if (error) return <p style={{ ...s.sub, color: "var(--orca-danger, #e05a5a)" }}>{error}</p>;
 
   return (
-    <div style={s.layout}>
-      <nav style={s.tabList}>
+    <div style={isAdmin ? s.layoutStacked : s.layout}>
+     <nav style={isAdmin ? s.tabListHorizontal : s.tabList}>
         {TABS.map((t) => (
           <button
             key={t.id}
             onClick={() => selectTab(t.id)}
             style={{
-              ...s.tabItem,
-              ...(tab === t.id ? s.tabItemActive : {}),
+              ...(isAdmin ? s.tabItemHorizontal : s.tabItem),
+              ...(tab === t.id ? (isAdmin ? s.tabItemHorizontalActive : s.tabItemActive) : {}),
             }}
           >
             {t.label}
@@ -65,8 +71,8 @@ export default function UserProfile() {
 
       <div style={s.panel}>
         {tab === "personal" && <PersonalInfo profile={profile} onUpdated={setProfile} />}
-        {tab === "security" && <SecurityTab />}
-        {tab === "data" && <DataTab />}
+        {tab === "security" && <SecurityTab paths={paths} />}
+        {tab === "data" && <DataTab paths={paths}/>}
       </div>
     </div>
   );
@@ -168,7 +174,7 @@ function PersonalInfo({ profile, onUpdated }) {
 }
 
 
-function SecurityTab() {
+function SecurityTab({ paths }) {
   const [twoFactor, setTwoFactor] = useState(null);
   const [loading2fa, setLoading2fa] = useState(true);
 
@@ -193,7 +199,7 @@ function SecurityTab() {
       <h1 style={s.h1}>Security</h1>
 
       <div style={s.card}>
-        <Link to="/security/2fa" style={s.summaryRow}>
+        <Link to={paths.twoFa} style={s.summaryRow}>
           <div>
             <div style={s.summaryTitle}>2-Step Verification</div>
             <div style={s.summarySub}>
@@ -206,7 +212,7 @@ function SecurityTab() {
           </div>
         </Link>
 
-        <Link to="/security/password" style={s.summaryRow}>
+        <Link to={paths.password} style={s.summaryRow}>
           <div>
             <div style={s.summaryTitle}>Password</div>
             <div style={s.summarySub}>Change your password</div>
@@ -217,13 +223,13 @@ function SecurityTab() {
   );
 }
 
-function DataTab() {
+function DataTab({ paths }) {
   return (
     <div style={{ maxWidth: 480 }}>
       <h1 style={s.h1}>Data &amp; privacy</h1>
 
       <div style={s.card}>
-        <Link to="/account/delete" style={s.summaryRow}>
+        <Link to={paths.deleteAccount} style={s.summaryRow}>
           <div>
             <div style={s.summaryTitle}>Delete account</div>
             <div style={s.summarySub}>Permanently delete your account and data</div>
@@ -315,5 +321,44 @@ const s = {
     borderRadius: "var(--orca-radius)",
     background: "var(--orca-slate)",
     padding: "6px 20px",
+  },
+  layoutStacked: { display: "flex", flexDirection: "column", gap: 24, maxWidth: 800 },
+  tabListHorizontal: {
+    display: "flex",
+    gap: 4,
+    borderBottom: "1px solid var(--orca-line)",
+    paddingBottom: 0,
+  },
+  tabItemHorizontal: {
+    background: "none",
+    border: "none",
+    borderBottom: "2px solid transparent",
+    color: "var(--orca-muted)",
+    fontSize: 14,
+    fontWeight: 600,
+    padding: "10px 14px",
+    cursor: "pointer",
+  },
+  tabItemHorizontalActive: {
+    color: "var(--orca-ink)",
+    borderBottom: "2px solid var(--orca-hi)",
+  },
+  tabItem: {
+    textAlign: "left",
+    background: "transparent",
+    border: "none",
+    borderLeft: "3px solid transparent",
+    color: "var(--orca-muted)",
+    fontSize: 14,
+    fontWeight: 600,
+    padding: "10px 12px",
+    borderRadius: 8,
+    cursor: "pointer",
+    transition: "background 0.12s, color 0.12s",
+  },
+  tabItemActive: {
+    background: "rgba(255,179,35,0.10)",
+    color: "var(--orca-hi)",
+    borderLeft: "3px solid var(--orca-hi)",
   },
 };
