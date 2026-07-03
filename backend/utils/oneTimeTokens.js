@@ -54,6 +54,30 @@ async function issueToken(kind, userId) {
 }
 
 /**
+ * Look up a token's owning user WITHOUT consuming it. Used when a route needs
+ * to validate something about the target user (e.g. "is the new password the
+ * same as the old one?") before committing to consuming a single-use token —
+ * consuming it first would burn the user's reset link even on a rejected
+ * request they could otherwise just retry.
+ *
+ * Returns the user_id if the token is valid/unexpired/unused, else null.
+ * Same validity rule as consumeToken, just without the UPDATE.
+ */
+async function peekToken(kind, rawToken) {
+  if (!rawToken || typeof rawToken !== 'string') return null;
+  const table = kind === 'reset' ? 'password_reset_tokens' : 'email_verification_tokens';
+  const tokenHash = hashToken(rawToken);
+
+  const [rows] = await pool.query(
+    `SELECT user_id FROM ${table}
+      WHERE token_hash = ? AND used = FALSE AND expires_at > NOW()
+      LIMIT 1`,
+    [tokenHash]
+  );
+  return rows[0]?.user_id ?? null;
+}
+
+/**
  * Consume a token: validate and mark used in one shot. Returns the user_id on
  * success, or null if the token is invalid/expired/already used.
  *
@@ -79,10 +103,9 @@ async function consumeToken(kind, rawToken) {
     `UPDATE ${table} SET used = TRUE WHERE id = ? AND used = FALSE`,
     [row.id]
   );
-  // If no row was updated, another request consumed it first — treat as invalid.
   if (result.affectedRows !== 1) return null;
 
   return row.user_id;
 }
 
-module.exports = { issueToken, consumeToken, VERIFICATION_TTL_MS, RESET_TTL_MS };
+module.exports = { issueToken, consumeToken, peekToken, VERIFICATION_TTL_MS, RESET_TTL_MS };

@@ -9,6 +9,6 @@ export function securityPaths(isAdmin) {
     profile: isAdmin ? "/adm/profile" : "/profile",
     twoFa: isAdmin ? "/adm/security/2fa" : "/security/2fa",
     password: isAdmin ? "/adm/security/password" : "/security/password",
-    deleteAccount: isAdmin ? "/adm/account/delete" : "/account/delete",
+    deleteAccount: "/account/delete", // not in admin page
   };
 }

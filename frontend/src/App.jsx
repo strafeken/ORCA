@@ -137,7 +137,6 @@ export default function App() {
           <Route path="/adm/profile" element={<UserProfile />} />
           <Route path="/adm/security/2fa" element={<TotpSetup />} />
           <Route path="/adm/security/password" element={<PasswordChange />} />
-          <Route path="/adm/account/delete" element={<DeleteAccount />} />
         </Route>
       </Route>
 
