@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../auth/useAuth";
 import { apiFetch } from "../auth/api";
@@ -28,7 +28,21 @@ export default function ConsultExpert() {
     return Number.isInteger(id) ? id : null;
   }, [searchParams]);
 
+  // #4 — ConsultThread reports whether a video call is active so we can warn
+  // before switching conversations (which would unmount the thread and drop
+  // the call). Kept in a ref to avoid re-rendering the whole hub on call state.
+  const callActiveRef = useRef(false);
+  const handleCallActiveChange = useCallback((active) => {
+    callActiveRef.current = active;
+  }, []);
+
   function selectConversation(id) {
+    if (callActiveRef.current && id !== selectedId) {
+      const ok = window.confirm(
+        "You're in a video call. Leaving this conversation will end the call. Continue?"
+      );
+      if (!ok) return;
+    }
     if (id) {
       setSearchParams({ c: String(id) }, { replace: true });
     } else {
@@ -218,6 +232,7 @@ export default function ConsultExpert() {
             key={selectedId}
             conversationId={selectedId}
             counterpart={selectedCounterpart}
+            onCallActiveChange={handleCallActiveChange}
           />
         ) : (
           <div style={s.emptyMain}>
