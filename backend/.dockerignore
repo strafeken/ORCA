@@ -11,6 +11,9 @@ logs
 npm-debug.log*
 *.log
 
+# Upload storage
+uploads
+
 # Git / CI / editor
 .git
 .gitignore
