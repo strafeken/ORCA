@@ -88,6 +88,69 @@ const registerWebRTCHandlers = (io, socket) => {
         }
     });
 
+    // ── Call setup handshake: ring → accept / decline (FR-11) ────────
+    // The SDP offer/answer exchange only begins after the callee accepts, so a
+    // call never connects automatically. These are lightweight control
+    // messages (no media) gated exactly like the SDP relays.
+
+    // Caller announces an incoming call to the other participant.
+    socket.on('call:ring', async ({ conversationId: rawId } = {}) => {
+        try {
+            const conversationId = await authorizeConversationEvent(socket, rawId);
+            if (!conversationId || !inCallRoom(conversationId)) {
+                socket.emit('call:error', { message: 'Access denied to this conversation' });
+                return;
+            }
+            const room = roomName(conversationId);
+            const others = (await io.in(room).fetchSockets()).filter((s) => s.user.id !== user.id);
+            if (others.length === 0) {
+                socket.emit('call:error', { message: 'The other participant is not in this conversation. They must be logged in and have this thread open.' });
+                return;
+            }
+            socket.to(room).emit('call:ring', { fromUserId: user.id, name: user.name });
+            system.info('Call ringing', { context: 'webrtc', userId: user.id, conversationId });
+        } catch (err) {
+            system.error('call:ring error', { context: 'webrtc', error: err.message });
+            socket.emit('call:error', { message: 'Failed to start call' });
+        }
+    });
+
+    // Callee accepted — the caller will now send the SDP offer.
+    socket.on('call:accept', async ({ conversationId: rawId } = {}) => {
+        try {
+            const conversationId = await authorizeConversationEvent(socket, rawId);
+            if (!conversationId || !inCallRoom(conversationId)) return;
+            socket.to(roomName(conversationId)).emit('call:accept', { fromUserId: user.id });
+            system.info('Call accepted', { context: 'webrtc', userId: user.id, conversationId });
+        } catch (err) {
+            system.error('call:accept error', { context: 'webrtc', error: err.message });
+        }
+    });
+
+    // Callee declined the incoming call.
+    socket.on('call:decline', async ({ conversationId: rawId } = {}) => {
+        try {
+            const conversationId = await authorizeConversationEvent(socket, rawId);
+            if (!conversationId || !inCallRoom(conversationId)) return;
+            socket.to(roomName(conversationId)).emit('call:decline', { fromUserId: user.id });
+            system.info('Call declined', { context: 'webrtc', userId: user.id, conversationId });
+        } catch (err) {
+            system.error('call:decline error', { context: 'webrtc', error: err.message });
+        }
+    });
+
+    // Caller cancelled before the callee answered.
+    socket.on('call:cancel', async ({ conversationId: rawId } = {}) => {
+        try {
+            const conversationId = await authorizeConversationEvent(socket, rawId);
+            if (!conversationId || !inCallRoom(conversationId)) return;
+            socket.to(roomName(conversationId)).emit('call:cancel', { fromUserId: user.id });
+            system.info('Call cancelled', { context: 'webrtc', userId: user.id, conversationId });
+        } catch (err) {
+            system.error('call:cancel error', { context: 'webrtc', error: err.message });
+        }
+    });
+
     // Relay SDP offer to the other participant
     socket.on('call:offer', async ({ conversationId: rawId, offer } = {}) => {
         try {
