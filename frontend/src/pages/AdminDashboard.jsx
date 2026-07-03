@@ -20,11 +20,19 @@ export default function AdminDashboard() {
     ]).then(([usersData, sessData]) => {
       const users    = usersData.users    || [];
       const sessions = sessData.sessions  || [];
+
+      // is_deleted is a computed boolean the backend returns based on the
+      // @orca-deleted email tombstone stamped during soft-deletion. Deleted
+      // rows stay in the DB to preserve FK references from messages and
+      // conversations, but they are not real accounts so they must be
+      // excluded from every stat to avoid misleading the admin.
+      const active = users.filter((u) => !u.is_deleted);
+
       setStats({
-        totalUsers:      users.length,
-        hardLocked:      users.filter((u) => u.is_hard_locked).length,
-        pendingExperts:  users.filter((u) => u.role === "expert" && !u.is_approved).length,
-        activeSessions:  sessions.length,
+        totalUsers:     active.length,
+        hardLocked:     active.filter((u) => u.is_hard_locked).length,
+        pendingExperts: active.filter((u) => u.role === "expert" && !u.is_approved).length,
+        activeSessions: sessions.length,
       });
     }).finally(() => setLoading(false));
   }, []);

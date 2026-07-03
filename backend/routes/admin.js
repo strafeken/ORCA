@@ -172,7 +172,8 @@ router.get('/users', async (req, res) => {
               is_verified, is_approved,
               is_soft_locked, soft_lock_until,
               is_hard_locked, failed_attempts,
-              created_at, updated_at
+              created_at, updated_at,
+              (email LIKE '%@orca-deleted') AS is_deleted
          FROM users
         ORDER BY created_at DESC`
     );
