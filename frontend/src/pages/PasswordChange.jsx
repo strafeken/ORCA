@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { apiFetch } from "../auth/api";
+import { useLocation } from "react-router-dom";
+import { securityPaths } from "../auth/securityPaths";
 
 export default function PasswordChange() {
   const [step, setStep] = useState("reauth"); // "reauth" | "change"
@@ -11,6 +13,10 @@ export default function PasswordChange() {
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
 
+  const location = useLocation();                          
+  const isAdmin = location.pathname.startsWith("/adm");    
+  const paths = securityPaths(isAdmin);
+  
   async function handleReauth(e) {
     e.preventDefault();
     setError(null);
@@ -62,7 +68,7 @@ export default function PasswordChange() {
 
   return (
     <div style={{ maxWidth: 380, margin: "0 auto" }}>
-      <Link to="/profile?tab=security" style={s.backLink}>
+      <Link to={`${paths.profile}?tab=security`} style={s.backLink}>
         ← Back to Security
       </Link>
       <h1 style={s.h1}>Change password</h1>

@@ -1,6 +1,7 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/useAuth";
 import { OrcaWordmark } from "./Brand";
+import AdminMenu from "./AdminMenu"; 
 
 /**
  * AdminShell — sidebar layout for every admin panel page.
@@ -70,13 +71,7 @@ export default function AdminShell() {
 
         {/* User + logout */}
         <div style={s.foot}>
-          <div style={s.userInfo}>
-            <span style={s.userName}>{user?.name}</span>
-            <span style={s.userRole}>administrator</span>
-          </div>
-          <button style={s.signOutBtn} onClick={handleLogout}>
-            Sign out
-          </button>
+          <AdminMenu user={user} onLogout={handleLogout} />
         </div>
       </aside>
 

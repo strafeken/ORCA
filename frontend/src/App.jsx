@@ -134,6 +134,10 @@ export default function App() {
           <Route path="/adm/sessions"  element={<AdminSessions />} />
           <Route path="/adm/chatlogs"  element={<AdminChatLogs />} />
           <Route path="/adm/logs"      element={<AdminLogs />} />
+          <Route path="/adm/profile" element={<UserProfile />} />
+          <Route path="/adm/security/2fa" element={<TotpSetup />} />
+          <Route path="/adm/security/password" element={<PasswordChange />} />
+          <Route path="/adm/account/delete" element={<DeleteAccount />} />
         </Route>
       </Route>
 
