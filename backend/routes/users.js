@@ -147,6 +147,11 @@ router.patch('/me/password', authMiddleware, async (req, res) => {
       return res.status(403).json({ error: 'Incorrect current password.' });
     }
 
+    const isSameAsOld = await verifyPassword(rows[0].password_hash, newPassword);
+    if (isSameAsOld) {
+      return res.status(400).json({ error: 'New password must be different from your current password.' });
+    }
+
     const newHash = await hashPassword(newPassword);
     await pool.query('UPDATE users SET password_hash = ?, updated_at = NOW() WHERE id = ?', [
       newHash,

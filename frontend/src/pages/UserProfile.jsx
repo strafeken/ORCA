@@ -4,11 +4,12 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useLocation } from "react-router-dom"; 
 import { securityPaths } from "../auth/securityPaths";
 
-const TABS = [
+const BASE_TABS = [
   { id: "personal", label: "Personal info" },
   { id: "security", label: "Security" },
-  { id: "data", label: "Data & privacy" },
 ];
+
+const DATA_TAB = { id: "data", label: "Data & privacy" };
 
 export default function UserProfile() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -21,6 +22,7 @@ export default function UserProfile() {
   const location = useLocation();                          
   const isAdmin = location.pathname.startsWith("/adm");     
   const paths = securityPaths(isAdmin);   
+  const TABS = isAdmin ? BASE_TABS : [...BASE_TABS, DATA_TAB];
 
   function selectTab(id) {
     setTab(id);
@@ -72,7 +74,7 @@ export default function UserProfile() {
       <div style={s.panel}>
         {tab === "personal" && <PersonalInfo profile={profile} onUpdated={setProfile} />}
         {tab === "security" && <SecurityTab paths={paths} />}
-        {tab === "data" && <DataTab paths={paths}/>}
+        {!isAdmin && tab === "data" && <DataTab paths={paths} />}
       </div>
     </div>
   );

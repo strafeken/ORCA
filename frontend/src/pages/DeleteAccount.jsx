@@ -2,8 +2,6 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { apiFetch } from "../auth/api";
 import { useAuth } from "../auth/useAuth";
-import { useLocation } from "react-router-dom";
-import { securityPaths } from "../auth/securityPaths";
 
 export default function DeleteAccount() {
   const [step, setStep] = useState("reauth"); // "reauth" | "confirm"
@@ -13,9 +11,6 @@ export default function DeleteAccount() {
   const { logout } = useAuth();
   const navigate = useNavigate();
 
-  const location = useLocation();                          
-  const isAdmin = location.pathname.startsWith("/adm");    
-  const paths = securityPaths(isAdmin);
 
   async function handleReauth(e) {
     e.preventDefault();
@@ -59,7 +54,7 @@ export default function DeleteAccount() {
 
   return (
     <div style={{ maxWidth: 420, margin: "0 auto" }}>
-      <Link to={`${paths.profile}?tab=data`} style={s.backLink}>
+      <Link to="/profile?tab=data" style={s.backLink}>
         ← Back to Data &amp; privacy
       </Link>
       <h1 style={s.h1}>Delete account</h1>
