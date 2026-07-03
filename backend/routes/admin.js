@@ -658,10 +658,12 @@ router.get('/conversations/:id/voice/:voiceId', (req, res) =>
 
 /**
  * DELETE /api/admin/conversations/:id
- * Permanently delete a chat log (all messages, then the conversation
- * record). The audit entry is written BEFORE the DELETE statements so
- * it cannot be lost even if the deletion fails partway through.
- * (FR-12, SR-11, SR-27, SR-29, SR-30)
+ * Permanently delete a chat log and ALL of its content — text messages,
+ * uploaded files/images (and their annotations), and voice messages — both the
+ * database rows AND the media stored on disk, then the conversation record.
+ * Nothing referencing the conversation is left behind. The audit entry is
+ * written BEFORE the DELETE statements so it cannot be lost even if the
+ * deletion fails partway through. (FR-12, SR-11, SR-27, SR-29, SR-30)
  */
 router.delete('/conversations/:id', async (req, res) => {
   const convId = parseInt(req.params.id, 10);
@@ -669,19 +671,22 @@ router.delete('/conversations/:id', async (req, res) => {
     return res.status(400).json({ error: 'Invalid conversation ID.' });
   }
 
+  let connection;
   try {
-    // Fetch metadata before deletion so the audit entry is meaningful.
+    // Fetch metadata before deletion so the audit entry is meaningful. Counts
+    // of each content type are recorded so the deletion log states exactly what
+    // was destroyed (SR-29).
     const [conv] = await pool.query(
       `SELECT c.id,
               w.name AS worker_name,
               e.name AS expert_name,
-              COUNT(m.id) AS message_count
+              (SELECT COUNT(*) FROM messages       WHERE conversation_id = c.id) AS message_count,
+              (SELECT COUNT(*) FROM files          WHERE conversation_id = c.id) AS file_count,
+              (SELECT COUNT(*) FROM voice_messages WHERE conversation_id = c.id) AS voice_count
          FROM conversations c
          JOIN users w ON w.id = c.worker_id
          JOIN users e ON e.id = c.expert_id
-         LEFT JOIN messages m ON m.conversation_id = c.id
         WHERE c.id = ?
-        GROUP BY c.id, w.name, e.name
         LIMIT 1`,
       [convId]
     );
@@ -701,22 +706,59 @@ router.delete('/conversations/:id', async (req, res) => {
       level: 'warn',
     });
 
-    // Delete messages before the conversation (FK dependency).
-    await pool.query('DELETE FROM messages WHERE conversation_id = ?', [convId]);
-    await pool.query('DELETE FROM conversations WHERE id = ?', [convId]);
+    // Delete every row tied to the conversation atomically. FK order matters:
+    // annotations reference files; messages/files/voice_messages reference the
+    // conversation. So annotations first, then the three content tables, then
+    // the conversation itself. A transaction ensures we never leave a partial
+    // state (e.g. files gone but conversation kept) on an error.
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    await connection.query(
+      'DELETE a FROM annotations a JOIN files f ON f.id = a.file_id WHERE f.conversation_id = ?',
+      [convId]
+    );
+    await connection.query('DELETE FROM messages WHERE conversation_id = ?', [convId]);
+    await connection.query('DELETE FROM files WHERE conversation_id = ?', [convId]);
+    await connection.query('DELETE FROM voice_messages WHERE conversation_id = ?', [convId]);
+    await connection.query('DELETE FROM conversations WHERE id = ?', [convId]);
+    await connection.commit();
+
+    // The authoritative DB records are now gone, so the media is already
+    // inaccessible through the app. Remove the stored files from disk too so
+    // the pictures and voice recordings are genuinely deleted, not just
+    // de-referenced. Everything for a conversation lives under
+    // uploads/<conversationId>/ (convId is a validated integer, so no path
+    // traversal). Best-effort with force:true: a disk error is logged but does
+    // not fail the request, and a conversation that never had uploads is a
+    // no-op rather than an error.
+    const conversationUploadDir = path.join(UPLOAD_ROOT, String(convId));
+    try {
+      await fs.promises.rm(conversationUploadDir, { recursive: true, force: true });
+    } catch (diskErr) {
+      system.error('Chat log deleted but failed to remove uploaded media from disk', {
+        context: 'admin', conversationId: convId, error: diskErr.message,
+      });
+    }
 
     system.info('Admin permanently deleted chat log', {
       context: 'admin',
       conversationId: convId,
       messageCount: meta.message_count,
+      fileCount: meta.file_count,
+      voiceCount: meta.voice_count,
       participants: `${meta.worker_name} / ${meta.expert_name}`,
       adminId: req.user.id,
     });
 
     res.json({ message: 'Chat log permanently deleted.' });
   } catch (err) {
+    if (connection) {
+      try { await connection.rollback(); } catch { /* already failing; ignore */ }
+    }
     system.error('Failed to delete chat log', { context: 'admin', error: err.message });
     res.status(500).json({ error: 'Could not delete chat log.' });
+  } finally {
+    if (connection) connection.release();
   }
 });
 

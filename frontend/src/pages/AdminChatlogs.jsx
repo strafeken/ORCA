@@ -244,10 +244,12 @@ export default function AdminChatLogs() {
           <div style={s.dialog}>
             <h2 style={s.dialogTitle}>Permanently delete chat log?</h2>
             <p style={s.dialogBody}>
-              This will permanently delete all {selected.message_count} message
+              This will permanently delete all {selected.message_count} text message
               {selected.message_count !== 1 ? "s" : ""} in conversation #{selected.id}
               between <strong>{selected.worker_name}</strong> and{" "}
-              <strong>{selected.expert_name}</strong>.
+              <strong>{selected.expert_name}</strong>, along with every uploaded
+              file, image and voice message — removed from both the database and
+              disk storage.
               <br /><br />
               An audit entry will be written to the log trail before deletion.
               This action <strong>cannot be undone</strong>.
