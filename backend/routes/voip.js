@@ -1,9 +1,12 @@
 const express = require('express');
 const router = express.Router();
-const { authMiddleware } = require('../middleware/authMiddleware');
+const { authMiddleware, requireRole } = require('../middleware/authMiddleware');
 
-router.get("/turn-credentials", authMiddleware, (req, res) => {
-    // This block is now fully protected. If a request hits this line, 
+// Only workers and experts can be conversation participants (FR-11), so only
+// they have any use for TURN relay credentials — don't hand them to other
+// roles (SR-04).
+router.get("/turn-credentials", authMiddleware, requireRole('worker', 'expert'), (req, res) => {
+    // This block is now fully protected. If a request hits this line,
     // it means the token was successfully validated and req.user is populated
     res.json([
         {

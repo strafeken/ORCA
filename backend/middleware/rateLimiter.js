@@ -1,4 +1,5 @@
 const rateLimit = require('express-rate-limit');
+const { ipKeyGenerator } = require('express-rate-limit');
 const { verifyToken } = require('../utils/tokens');
 
 /**
@@ -57,8 +58,9 @@ function keyGenerator(req) {
       // Invalid/expired token — fall through to IP-based keying below.
     }
   }
-  // Unauthenticated (or token failed verification): bucket by IP as before.
-  return req.ip;
+  // Use the library's helper so IPv6 addresses are normalized/subnet-masked
+  // instead of keyed per-address, closing an IPv6 bypass vector.
+  return ipKeyGenerator(req.ip);
 }
 
 const globalLimiter = rateLimit({
@@ -73,4 +75,4 @@ const globalLimiter = rateLimit({
   message: { error: 'Too many requests, please try again later.' },
 });
 
-module.exports = { globalLimiter };
+module.exports = { globalLimiter, keyGenerator };
