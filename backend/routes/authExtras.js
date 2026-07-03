@@ -2,8 +2,8 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db/pool').promise();
 
-const { hashPassword } = require('../utils/password');
-const { issueToken, consumeToken } = require('../utils/oneTimeTokens');
+const { hashPassword, verifyPassword } = require('../utils/password');
+const { issueToken, consumeToken, peekToken } = require('../utils/oneTimeTokens');
 const { sendActionEmail } = require('../utils/mailer');
 const { setupTotp, verifyTotp, hasTotp, disableTotp } = require('../utils/totp');
 const { authMiddleware } = require('../middleware/authMiddleware');
@@ -131,6 +131,19 @@ router.post('/reset-password', authLimiter, async (req, res) => {
     const { token, password } = req.body;
     const pwErr = passwordPolicyError(password);
     if (pwErr) return res.status(400).json({ error: pwErr });
+
+    // Peek first (non-destructive) so a "same as old password" rejection
+    // doesn't burn the user's single-use reset link — they can just try a
+    // different password with the same link.
+    const peekedUserId = await peekToken('reset', token);
+    if (!peekedUserId) {
+      return res.status(400).json({ error: 'This reset link is invalid or has expired.' });
+    }
+
+    const [rows] = await pool.query('SELECT password_hash FROM users WHERE id = ?', [peekedUserId]);
+    if (rows.length && (await verifyPassword(rows[0].password_hash, password))) {
+      return res.status(400).json({ error: 'New password must be different from your previous password.' });
+    }
 
     const userId = await consumeToken('reset', token);
     if (!userId) {
