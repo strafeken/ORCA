@@ -66,6 +66,21 @@ router.patch('/me', authMiddleware, async (req, res) => {
       ...values,
       req.user.id,
     ]);
+
+    // SR-29: a profile update is a state-changing action on the user's own
+    // account and must be recorded in the audit trail. Previously this route
+    // returned successfully without logging anything, so profile edits were
+    // invisible in the audit log. resourceId is the affected user (self here);
+    // the changed field names go to the audit meta so a reviewer can see WHAT
+    // was updated without exposing the new values themselves.
+    audit.log({
+      userId: req.user.id,
+      actionType: 'profile_updated',
+      resourceType: 'user',
+      resourceId: req.user.id,
+      ip: req.ip,
+    });
+
     const [results] = await pool.query(
       'SELECT id, name, email, contact_number, bio, role, is_verified, is_approved, created_at FROM users WHERE id = ?',
       [req.user.id]
@@ -211,11 +226,16 @@ router.delete('/me', authMiddleware, async (req, res) => {
 
     await conn.commit();
 
+    // level: 'warn' — a self-service account deletion is a permanent,
+    // irreversible destruction of the record, exactly like the admin-initiated
+    // ADMIN_DELETE_USER path. It should stand out in the audit log viewer
+    // rather than blend in with routine info-level activity.
     audit.log({
       userId: req.user.id,
       actionType: 'account_deleted',
       resourceType: 'user',
-      ip: req.ip
+      ip: req.ip,
+      level: 'warn'
     });
 
     res.json({ message: 'Account deleted.' });
