@@ -27,6 +27,9 @@ export default function AdminUserManagement() {
   const [roleFilter, setRoleFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [search, setSearch] = useState("");
+  // "active" | "deleted" — deleted (PII-anonymised tombstone) accounts live on
+  // their own tab so they don't clog the active-users table.
+  const [tab, setTab] = useState("active");
 
   // { type: 'delete'|'approve'|'revoke'|'unlock', user }
   const [confirm, setConfirm] = useState(null);
@@ -60,14 +63,22 @@ export default function AdminUserManagement() {
     fetchUsers();
   }
 
-  // ── Filtering ────────────────────────────────────────────────────────
+  // ── Partition into active vs deleted accounts ────────────────────────
+  const isDeleted = (u) => u.email.endsWith("@orca-deleted");
+  const activeUsers  = useMemo(() => users.filter((u) => !isDeleted(u)), [users]);
+  const deletedUsers = useMemo(() => users.filter(isDeleted), [users]);
+
+  // ── Filtering (scoped to the current tab) ────────────────────────────
   const filtered = useMemo(() => {
-    let result = [...users];
+    let result = tab === "deleted" ? [...deletedUsers] : [...activeUsers];
     if (roleFilter !== "all") result = result.filter((u) => u.role === roleFilter);
-    if (statusFilter === "hard_locked")     result = result.filter((u) => !!u.is_hard_locked && !u.email.endsWith("@orca-deleted"));
-    if (statusFilter === "pending_expert")  result = result.filter((u) => u.role === "expert" && !u.is_approved);
-    if (statusFilter === "unverified")      result = result.filter((u) => !u.is_verified);
-    if (statusFilter === "deleted")         result = result.filter((u) => u.email.endsWith("@orca-deleted"));
+    // Status filters only apply to active accounts; deleted tombstones have no
+    // meaningful lock/verification state to filter on.
+    if (tab === "active") {
+      if (statusFilter === "hard_locked")     result = result.filter((u) => !!u.is_hard_locked);
+      if (statusFilter === "pending_expert")  result = result.filter((u) => u.role === "expert" && !u.is_approved);
+      if (statusFilter === "unverified")      result = result.filter((u) => !u.is_verified);
+    }
     if (search) {
       const q = search.toLowerCase();
       result = result.filter(
@@ -75,7 +86,14 @@ export default function AdminUserManagement() {
       );
     }
     return result;
-  }, [users, roleFilter, statusFilter, search]);
+  }, [activeUsers, deletedUsers, tab, roleFilter, statusFilter, search]);
+
+  // Switching tabs is a user action, so reset the status filter here (in the
+  // handler) rather than in an effect — the status filter is active-tab-only.
+  function handleTabChange(nextTab) {
+    setTab(nextTab);
+    setStatusFilter("all");
+  }
 
   // ── Actions ──────────────────────────────────────────────────────────
   async function executeAction() {
@@ -169,6 +187,22 @@ export default function AdminUserManagement() {
 
       {error && <div style={{ ...s.banner, background: "#450a0a", color: "#fca5a5", border: "1px solid #991b1b" }}>{error}</div>}
 
+      {/* ── Tab bar: active vs deleted accounts ── */}
+      <div style={s.tabBar}>
+        {[
+          { key: "active",  label: `Active users (${activeUsers.length})` },
+          { key: "deleted", label: `Deleted users (${deletedUsers.length})` },
+        ].map(({ key, label }) => (
+          <button
+            key={key}
+            style={{ ...s.tab, ...(tab === key ? s.tabActive : {}) }}
+            onClick={() => handleTabChange(key)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       {/* ── Filters ── */}
       <div style={s.filters}>
         <input
@@ -183,13 +217,15 @@ export default function AdminUserManagement() {
           <option value="expert">Expert</option>
           <option value="admin">Admin</option>
         </select>
-        <select style={s.select} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-          <option value="all">All statuses</option>
-          <option value="hard_locked">Hard locked</option>
-          <option value="pending_expert">Pending expert approval</option>
-          <option value="unverified">Unverified</option>
-          <option value="deleted">Deleted</option>
-        </select>
+        {/* Status filters are meaningful only for active accounts. */}
+        {tab === "active" && (
+          <select style={s.select} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+            <option value="all">All statuses</option>
+            <option value="hard_locked">Hard locked</option>
+            <option value="pending_expert">Pending expert approval</option>
+            <option value="unverified">Unverified</option>
+          </select>
+        )}
       </div>
 
       {/* ── Table ── */}
@@ -209,7 +245,11 @@ export default function AdminUserManagement() {
             {loading ? (
               <tr><td colSpan={6} style={s.empty}>Loading users…</td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={6} style={s.empty}>No users match your filters.</td></tr>
+              <tr><td colSpan={6} style={s.empty}>
+                {tab === "deleted" && deletedUsers.length === 0
+                  ? "No deleted accounts."
+                  : "No users match your filters."}
+              </td></tr>
             ) : filtered.map((u) => {
               // Coerce MySQL 0/1 integers to real booleans once per row.
               // Without this, JSX expressions like {0 && <Btn/>} render a
@@ -291,7 +331,7 @@ export default function AdminUserManagement() {
       </div>
 
       <p style={s.count}>
-        Showing {filtered.length} of {users.length} users
+        Showing {filtered.length} of {tab === "deleted" ? deletedUsers.length : activeUsers.length} {tab} accounts
       </p>
 
       {/* ── Confirm dialog ── */}
@@ -373,6 +413,9 @@ const s = {
   refreshBtn: { fontSize: 13, padding: "7px 14px", borderRadius: 8, border: "1px solid var(--orca-line)", background: "var(--orca-slate)", color: "var(--orca-ink)", cursor: "pointer" },
   banner: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", borderRadius: 8, fontSize: 13, marginBottom: 14 },
   bannerClose: { background: "none", border: "none", cursor: "pointer", fontSize: 14, color: "inherit" },
+  tabBar: { display: "flex", gap: 4, marginBottom: 14, borderBottom: "1px solid var(--orca-line)" },
+  tab: { fontSize: 13, fontWeight: 500, padding: "8px 16px", border: "none", borderBottom: "2px solid transparent", background: "transparent", color: "var(--orca-muted)", cursor: "pointer", borderRadius: "6px 6px 0 0" },
+  tabActive: { color: "var(--orca-hi)", borderBottom: "2px solid var(--orca-hi)", background: "rgba(255,179,35,0.06)" },
   filters: { display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 },
   searchInput: { fontSize: 13, padding: "7px 12px", borderRadius: 8, border: "1px solid var(--orca-line)", background: "var(--orca-slate)", color: "var(--orca-ink)", width: 220 },
   select: { fontSize: 13, padding: "7px 10px", borderRadius: 8, border: "1px solid var(--orca-line)", background: "var(--orca-slate)", color: "var(--orca-ink)" },
