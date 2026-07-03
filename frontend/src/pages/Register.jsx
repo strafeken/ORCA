@@ -109,7 +109,7 @@ export default function Register() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} noValidate>
+          <form onSubmit={handleSubmit} noValidate autoComplete="off">
             <div className="orca-field">
               <label htmlFor="name">Full name</label>
               <input
@@ -138,7 +138,7 @@ export default function Register() {
                 id="password"
                 type="password"
                 placeholder="At least 12 characters"
-                autoComplete="new-password"
+                autoComplete="off"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />

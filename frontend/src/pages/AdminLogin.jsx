@@ -86,7 +86,7 @@ export default function AdminLogin() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} style={s.form} noValidate>
+        <form onSubmit={handleSubmit} style={s.form} noValidate autoComplete="off">
           <label style={s.label} htmlFor="adm-email">
             Email address
           </label>
@@ -110,7 +110,7 @@ export default function AdminLogin() {
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            autoComplete="current-password"
+            autoComplete="off"
             required
             disabled={loading}
           />

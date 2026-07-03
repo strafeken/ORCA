@@ -68,14 +68,14 @@ export default function ResetPassword() {
               <h1 style={s.h1}>Set a new password</h1>
               <p style={s.sub}>Choose a strong password of at least 12 characters.</p>
               {error && <div className="orca-alert" role="alert">{error}</div>}
-              <form onSubmit={handleSubmit} noValidate>
+              <form onSubmit={handleSubmit} noValidate autoComplete="off">
                 <div className="orca-field">
                   <label htmlFor="password">New password</label>
                   <input
                     id="password"
                     type="password"
                     placeholder="At least 12 characters"
-                    autoComplete="new-password"
+                    autoComplete="off"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                   />
@@ -86,7 +86,7 @@ export default function ResetPassword() {
                     id="confirm"
                     type="password"
                     placeholder="Re-enter password"
-                    autoComplete="new-password"
+                    autoComplete="off"
                     value={confirm}
                     onChange={(e) => setConfirm(e.target.value)}
                   />

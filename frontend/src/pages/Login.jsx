@@ -67,7 +67,7 @@ export default function Login() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} noValidate>
+          <form onSubmit={handleSubmit} noValidate autoComplete="off">
             <div className="orca-field">
               <label htmlFor="email">Email</label>
               <input
@@ -87,7 +87,7 @@ export default function Login() {
                 id="password"
                 type="password"
                 placeholder="Your password"
-                autoComplete="current-password"
+                autoComplete="off"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 disabled={needTotp}
