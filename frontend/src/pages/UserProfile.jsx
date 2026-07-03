@@ -243,22 +243,6 @@ function DataTab({ paths }) {
 const s = {
   layout: { display: "flex", gap: 32, maxWidth: 800 },
   tabList: { display: "flex", flexDirection: "column", gap: 4, minWidth: 180 },
-  tabItem: {
-    textAlign: "left",
-    background: "none",
-    border: "none",
-    color: "var(--orca-muted)",
-    fontSize: 14,
-    fontWeight: 600,
-    padding: "10px 12px",
-    borderRadius: 8,
-    cursor: "pointer",
-  },
-  tabItemActive: {
-    background: "var(--orca-slate)",
-    color: "var(--orca-ink)",
-    border: "1px solid var(--orca-line)",
-  },
   panel: { flex: 1 },
   h1: { fontSize: 26, fontWeight: 700, letterSpacing: "-0.5px", margin: "0 0 20px", color: "var(--orca-paper)" },
   sub: { fontSize: 15, color: "var(--orca-muted)" },
