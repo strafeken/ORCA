@@ -54,6 +54,18 @@ class UserRepository {
     );
   }
 
+  /** A single approved, available expert by id — for starting a consultation. */
+  async findAvailableExpertById(expertId) {
+    const [rows] = await pool.query(
+      `SELECT id, name, bio FROM users
+        WHERE id = ? AND role = 'expert' AND is_approved = TRUE
+          AND is_hard_locked = FALSE AND email NOT LIKE ?
+        LIMIT 1`,
+      [expertId, `%${DELETED_EMAIL_SUFFIX}`]
+    );
+    return rows[0] || null;
+  }
+
   /** Approved, non-locked, non-deleted experts for the directory (FR-06). */
   async findApprovedExperts() {
     const [rows] = await pool.query(
