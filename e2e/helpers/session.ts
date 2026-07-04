@@ -7,6 +7,26 @@ const adminPassword = process.env.ADMIN_PASSWORD ?? "AdminPass123!";
 
 type Tokens = { access?: string; refresh?: string; csrf?: string };
 
+/** True when the page has navigated to the app origin (not about:blank / data: URLs). */
+function isAppPage(page: Page): boolean {
+  const url = page.url();
+  if (url === "about:blank" || url.startsWith("data:")) return false;
+  try {
+    return new URL(url).origin === new URL(baseURL()).origin;
+  } catch {
+    return false;
+  }
+}
+
+async function hasBrowserSession(page: Page): Promise<boolean> {
+  if (!isAppPage(page)) return false;
+  try {
+    return await page.evaluate(() => !!sessionStorage.getItem("orca.session"));
+  } catch {
+    return false;
+  }
+}
+
 async function newApiContext(): Promise<APIRequestContext> {
   return playwrightRequest.newContext({ baseURL: baseURL() });
 }
@@ -104,12 +124,11 @@ export async function revokeSeedUserSessions(email: string): Promise<void> {
 
 /** Sign out through the same UI path production uses (handles CSRF correctly). */
 export async function logoutViaUi(page: Page): Promise<void> {
-  const hasSession = await page.evaluate(() => !!sessionStorage.getItem("orca.session"));
-  if (!hasSession) return;
+  if (!(await hasBrowserSession(page))) return;
 
   const url = page.url();
   const onLoginPage = /\/login|\/administratorLogin/.test(url);
-  if (onLoginPage || url === "about:blank") {
+  if (onLoginPage) {
     await logoutViaApi(page);
     return;
   }
@@ -127,7 +146,11 @@ export async function logoutViaUi(page: Page): Promise<void> {
 
 /** Best-effort API logout mirroring frontend apiFetch CSRF handling. */
 export async function logoutViaApi(page: Page): Promise<void> {
-  const ok = await page.evaluate(async () => {
+  if (!isAppPage(page)) return;
+
+  let ok = false;
+  try {
+    ok = await page.evaluate(async () => {
     const refreshToken = sessionStorage.getItem("orca.refresh");
     const token = sessionStorage.getItem("orca.session");
     if (!refreshToken && !token) return true;
@@ -181,6 +204,9 @@ export async function logoutViaApi(page: Page): Promise<void> {
 
     return false;
   });
+  } catch {
+    return;
+  }
 
   if (!ok) {
     // Do not clear sessionStorage locally when the server session may still be live.
@@ -189,9 +215,15 @@ export async function logoutViaApi(page: Page): Promise<void> {
 }
 
 export async function logoutCurrentUser(page: Page): Promise<void> {
+  if (!isAppPage(page)) return;
+
   try {
     await logoutViaUi(page);
   } catch {
-    await logoutViaApi(page);
+    try {
+      await logoutViaApi(page);
+    } catch {
+      // Request-only tests leave the page on about:blank — nothing to revoke.
+    }
   }
 }
