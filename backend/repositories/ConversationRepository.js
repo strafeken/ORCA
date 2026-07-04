@@ -1,5 +1,9 @@
 const pool = require('../db/pool');
 
+// Soft-deleted accounts have their email suffixed with this marker; a
+// conversation with a deleted participant must never surface.
+const DELETED_EMAIL_SUFFIX = '@orca-deleted';
+
 /**
  * ConversationRepository — data access for conversations and their unified
  * message history (text + file + voice). Formalizes the previous
@@ -105,6 +109,68 @@ class ConversationRepository {
     );
     const hasMore = rows.length === boundedLimit;
     return { messages: rows.reverse(), hasMore };
+  }
+
+  // ---- HTTP inbox / detail / creation (routes/conversations.js) ----
+
+  /** Full conversation + both parties' details, participant-scoped and excluding deleted accounts. */
+  async findDetailedForUser(conversationId, userId) {
+    const [rows] = await pool.promise().query(
+      `SELECT c.id, c.worker_id, c.expert_id, c.created_at, c.updated_at,
+              w.name AS worker_name, w.email AS worker_email,
+              e.name AS expert_name, e.email AS expert_email, e.bio AS expert_bio
+         FROM conversations c
+         JOIN users w ON w.id = c.worker_id
+         JOIN users e ON e.id = c.expert_id
+        WHERE c.id = ?
+          AND (c.worker_id = ? OR c.expert_id = ?)
+          AND w.email NOT LIKE ?
+          AND e.email NOT LIKE ?
+        LIMIT 1`,
+      [conversationId, userId, userId, `%${DELETED_EMAIL_SUFFIX}`, `%${DELETED_EMAIL_SUFFIX}`]
+    );
+    return rows[0] || null;
+  }
+
+  /** Inbox list for a worker (counterpart = expert) or an expert (counterpart = worker). */
+  async listInbox(userId, isWorker) {
+    const [rows] = await pool.promise().query(
+      isWorker
+        ? `SELECT c.id, c.created_at, c.updated_at,
+                  u.id AS counterpart_id, u.name AS counterpart_name,
+                  u.bio AS counterpart_bio, 'expert' AS counterpart_role
+             FROM conversations c
+             JOIN users u ON u.id = c.expert_id
+            WHERE c.worker_id = ?
+              AND u.email NOT LIKE ?
+            ORDER BY c.updated_at DESC`
+        : `SELECT c.id, c.created_at, c.updated_at,
+                  u.id AS counterpart_id, u.name AS counterpart_name,
+                  u.bio AS counterpart_bio, 'worker' AS counterpart_role
+             FROM conversations c
+             JOIN users u ON u.id = c.worker_id
+            WHERE c.expert_id = ?
+              AND u.email NOT LIKE ?
+            ORDER BY c.updated_at DESC`,
+      [userId, `%${DELETED_EMAIL_SUFFIX}`]
+    );
+    return rows;
+  }
+
+  async findByWorkerAndExpert(workerId, expertId) {
+    const [rows] = await pool.promise().query(
+      'SELECT id FROM conversations WHERE worker_id = ? AND expert_id = ? LIMIT 1',
+      [workerId, expertId]
+    );
+    return rows[0] || null;
+  }
+
+  async create(workerId, expertId) {
+    const [result] = await pool.promise().query(
+      'INSERT INTO conversations (worker_id, expert_id) VALUES (?, ?)',
+      [workerId, expertId]
+    );
+    return result.insertId;
   }
 }
 
