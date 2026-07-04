@@ -155,6 +155,7 @@ jobs:
 
   sast-sonarqube:
     name: "SAST: SonarQube"
+    if: github.actor != 'dependabot[bot]'
     runs-on: [self-hosted, ec2]
     steps:
       - name: Checkout code
@@ -175,12 +176,12 @@ jobs:
         run: npm ci
         working-directory: ./backend
  
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: frontend-coverage
           path: frontend/coverage      
  
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: backend-coverage
           path: backend/coverage
