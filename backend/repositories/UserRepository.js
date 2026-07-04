@@ -1,5 +1,9 @@
 const pool = require('../db/pool').promise();
 
+// Soft-deleted accounts have their email suffixed with this marker; they must
+// never surface in listings.
+const DELETED_EMAIL_SUFFIX = '@orca-deleted';
+
 /**
  * UserRepository — data access to the `users` table (Repository pattern).
  *
@@ -48,6 +52,21 @@ class UserRepository {
       `UPDATE users SET failed_attempts = ?, is_hard_locked = TRUE WHERE id = ?`,
       [attempts, userId]
     );
+  }
+
+  /** Approved, non-locked, non-deleted experts for the directory (FR-06). */
+  async findApprovedExperts() {
+    const [rows] = await pool.query(
+      `SELECT id, name, email, bio, contact_number
+         FROM users
+        WHERE role = 'expert'
+          AND is_approved = TRUE
+          AND is_hard_locked = FALSE
+          AND email NOT LIKE ?
+        ORDER BY name ASC`,
+      [`%${DELETED_EMAIL_SUFFIX}`]
+    );
+    return rows;
   }
 }
 
