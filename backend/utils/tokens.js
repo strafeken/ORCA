@@ -1,5 +1,5 @@
-const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const { JwtTokenSigner } = require('../adapters/TokenSigner');
 
 /**
  * Token utilities — access tokens, refresh tokens, and hashing for storage.
@@ -22,13 +22,13 @@ const crypto = require('crypto');
  * to a hardcoded default — a predictable signing secret means anyone can forge
  * a valid admin token. The app should refuse to start without it.
  */
-const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET) {
-  throw new Error('JWT_SECRET is not set. Refusing to start with an insecure default.');
-}
-
 const ACCESS_TOKEN_TTL = '15m';
 const REFRESH_TOKEN_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours — absolute session cap
+
+// JWT signing/verifying is delegated to the TokenSigner adapter (see
+// adapters/TokenSigner.js). Constructed at load so the "refuse to start without
+// JWT_SECRET" policy still fires here at module load time.
+const signer = new JwtTokenSigner(process.env.JWT_SECRET, ACCESS_TOKEN_TTL);
 
 /**
  * Issue a signed access token. The payload is intentionally minimal — only what
@@ -37,21 +37,16 @@ const REFRESH_TOKEN_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours — absolute session
  * encrypted, so anyone holding the token can read it.
  */
 function issueAccessToken(user) {
-  return jwt.sign(
-    { id: user.id, name: user.name, role: user.role },
-    JWT_SECRET,
-    { expiresIn: ACCESS_TOKEN_TTL }
-  );
+  return signer.sign({ id: user.id, name: user.name, role: user.role });
 }
 
 /**
  * Verify an access token. Kept with this exact name and return shape because
- * the existing auth middleware and socket auth import `verifyToken` — this is a
- * drop-in replacement for the fake one, so chat/video sockets keep working.
+ * the existing auth middleware and socket auth import `verifyToken`.
  * Throws on invalid/expired tokens (callers already catch this).
  */
 function verifyToken(token) {
-  return jwt.verify(token, JWT_SECRET);
+  return signer.verify(token);
 }
 
 /**
