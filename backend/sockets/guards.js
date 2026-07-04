@@ -1,11 +1,12 @@
-const pool = require('../db/pool').promise();
 const { hashToken } = require('../utils/tokens');
 const { INACTIVITY_TIMEOUT_MS } = require('../middleware/authMiddleware');
 const { SessionRepository } = require('../repositories/SessionRepository');
+const { ConversationRepository } = require('../repositories/ConversationRepository');
 
-// Session-table access is delegated to SessionRepository; guards keep the
-// idle-timeout policy and the participant check (still on its own query for now).
+// Session- and conversation-table access is delegated to repositories; guards
+// hold only the idle-timeout policy and the per-event authorization flow.
 const sessionRepo = new SessionRepository();
+const conversationRepo = new ConversationRepository();
 
 /**
  * Shared access-control guards for socket handlers (SR-04).
@@ -51,25 +52,17 @@ function parseConversationId(raw) {
   return null;
 }
 
-async function isParticipant(conversationId, userId) {
-  const [rows] = await pool.query(
-    'SELECT id FROM conversations WHERE id = ? AND (worker_id = ? OR expert_id = ?)',
-    [conversationId, userId, userId]
-  );
-  return rows.length > 0;
-}
-
 /**
  * Full per-event gate: validates the conversation id, confirms the socket's
  * session is still live, and confirms the user is a participant of that
- * conversation. Returns the parsed conversation id, or null if any check
- * fails — callers treat null as access denied.
+ * conversation (via ConversationRepository). Returns the parsed conversation
+ * id, or null if any check fails — callers treat null as access denied.
  */
 async function authorizeConversationEvent(socket, rawConversationId) {
   const conversationId = parseConversationId(rawConversationId);
   if (!conversationId) return null;
   if (!(await isSessionLive(socket.sessionId))) return null;
-  if (!(await isParticipant(conversationId, socket.user.id))) return null;
+  if (!(await conversationRepo.isParticipant(conversationId, socket.user.id))) return null;
   return conversationId;
 }
 
@@ -77,6 +70,5 @@ module.exports = {
   resolveSession,
   isSessionLive,
   parseConversationId,
-  isParticipant,
   authorizeConversationEvent,
 };
