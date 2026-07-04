@@ -1,32 +1,21 @@
-const crypto = require('crypto');
 const pool = require('../db/pool').promise();
+const { TokenFactory, TOKEN_KINDS } = require('../domain/TokenFactory');
 
 /**
  * One-time token helper — shared by email verification and password reset.
  *
- * Both flows follow the same secure pattern:
- *   1. Generate a high-entropy random token (256 bits) — the RAW token goes in
- *      the link sent to the user, and nowhere else.
- *   2. Store only the SHA-256 HASH of the token in the database, with an
- *      expiry and a single-use flag. A database leak therefore yields no usable
- *      tokens (same reasoning as hashing passwords / session tokens).
- *   3. To consume: hash the incoming token, look it up, check it's unexpired
- *      and unused, then mark it used.
+ * Token material (raw value, hash, table, expiry) is produced by TokenFactory
+ * (domain/TokenFactory.js); this module owns only the persistence + validation:
+ *   1. issue:   ask the factory for a token, invalidate prior ones, store hash.
+ *   2. consume: hash the incoming token, look it up unexpired/unused, mark used.
  *
- * SHA-256 (not Argon2) is correct here because the token is already random and
- * high-entropy — it doesn't need slow hashing the way human passwords do.
+ * Only the SHA-256 HASH is ever stored, so a DB leak yields no usable tokens.
  */
 
-const VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
-const RESET_TTL_MS = 60 * 60 * 1000;             // 1 hour (shorter — higher risk)
+const VERIFICATION_TTL_MS = TOKEN_KINDS.verification.ttlMs;
+const RESET_TTL_MS = TOKEN_KINDS.reset.ttlMs;
 
-function generateToken() {
-  return crypto.randomBytes(32).toString('hex');
-}
-
-function hashToken(token) {
-  return crypto.createHash('sha256').update(token).digest('hex');
-}
+const tokenFactory = new TokenFactory();
 
 /**
  * Issue a token of the given kind and persist its hash.
@@ -34,39 +23,28 @@ function hashToken(token) {
  * @returns the RAW token (to embed in the email link)
  */
 async function issueToken(kind, userId) {
-  const raw = generateToken();
-  const tokenHash = hashToken(raw);
-  const ttl = kind === 'reset' ? RESET_TTL_MS : VERIFICATION_TTL_MS;
-  const expiresAt = new Date(Date.now() + ttl);
-
-  const table = kind === 'reset' ? 'password_reset_tokens' : 'email_verification_tokens';
+  const { raw, hash, table, expiresAt } = tokenFactory.create(kind);
 
   // Invalidate any prior outstanding tokens of this kind for the user, so only
-  // the newest link works (prevents a pile of valid links accumulating).
+  // the newest link works.
   await pool.query(`UPDATE ${table} SET used = TRUE WHERE user_id = ? AND used = FALSE`, [userId]);
 
   await pool.query(
     `INSERT INTO ${table} (user_id, token_hash, expires_at) VALUES (?, ?, ?)`,
-    [userId, tokenHash, expiresAt]
+    [userId, hash, expiresAt]
   );
 
   return raw;
 }
 
 /**
- * Look up a token's owning user WITHOUT consuming it. Used when a route needs
- * to validate something about the target user (e.g. "is the new password the
- * same as the old one?") before committing to consuming a single-use token —
- * consuming it first would burn the user's reset link even on a rejected
- * request they could otherwise just retry.
- *
- * Returns the user_id if the token is valid/unexpired/unused, else null.
- * Same validity rule as consumeToken, just without the UPDATE.
+ * Look up a token's owning user WITHOUT consuming it. Returns the user_id if the
+ * token is valid/unexpired/unused, else null.
  */
 async function peekToken(kind, rawToken) {
   if (!rawToken || typeof rawToken !== 'string') return null;
-  const table = kind === 'reset' ? 'password_reset_tokens' : 'email_verification_tokens';
-  const tokenHash = hashToken(rawToken);
+  const table = tokenFactory.tableFor(kind);
+  const tokenHash = tokenFactory.hash(rawToken);
 
   const [rows] = await pool.query(
     `SELECT user_id FROM ${table}
@@ -78,17 +56,13 @@ async function peekToken(kind, rawToken) {
 }
 
 /**
- * Consume a token: validate and mark used in one shot. Returns the user_id on
- * success, or null if the token is invalid/expired/already used.
- *
- * The UPDATE ... WHERE (used = FALSE AND expires_at > NOW()) is atomic — it
- * both checks validity and marks the token used in a single statement, so the
- * same token can't be redeemed twice via a race.
+ * Consume a token: validate and mark used atomically. Returns the user_id on
+ * success, or null if invalid/expired/already used.
  */
 async function consumeToken(kind, rawToken) {
   if (!rawToken || typeof rawToken !== 'string') return null;
-  const table = kind === 'reset' ? 'password_reset_tokens' : 'email_verification_tokens';
-  const tokenHash = hashToken(rawToken);
+  const table = tokenFactory.tableFor(kind);
+  const tokenHash = tokenFactory.hash(rawToken);
 
   const [rows] = await pool.query(
     `SELECT id, user_id FROM ${table}
