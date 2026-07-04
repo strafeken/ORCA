@@ -175,12 +175,12 @@ jobs:
         run: npm ci
         working-directory: ./backend
  
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: frontend-coverage
           path: frontend/coverage      
  
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: backend-coverage
           path: backend/coverage
