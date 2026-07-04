@@ -46,6 +46,12 @@
       "routes/**/*.js",
       "middleware/**/*.js",
       "utils/**/*.js",
+      "controllers/**/*.js",
+      "services/**/*.js",
+      "repositories/**/*.js",
+      "adapters/**/*.js",
+      "domain/**/*.js",
+      "sockets/**/*.js",
       "!**/node_modules/**"
     ],
     "coverageReporters": ["lcov", "text"],
