@@ -3,7 +3,7 @@ const router = express.Router();
 const pool = require('../db/pool').promise();
 const { authMiddleware, requireRole } = require('../middleware/authMiddleware');
 const { verifyPassword, hashPassword, passwordPolicyError } = require('../utils/password');
-const { audit } = require('../utils/winstonLogger');
+const { eventBus, DomainEvent } = require('../domain/events');
 
 /**
  * GET /api/users
@@ -73,13 +73,12 @@ router.patch('/me', authMiddleware, async (req, res) => {
     // invisible in the audit log. resourceId is the affected user (self here);
     // the changed field names go to the audit meta so a reviewer can see WHAT
     // was updated without exposing the new values themselves.
-    audit.log({
+    eventBus.publish(new DomainEvent('profile_updated', {
       userId: req.user.id,
-      actionType: 'profile_updated',
       resourceType: 'user',
       resourceId: req.user.id,
       ip: req.ip,
-    });
+    }));
 
     const [results] = await pool.query(
       'SELECT id, name, email, contact_number, bio, role, is_verified, is_approved, created_at FROM users WHERE id = ?',
@@ -109,7 +108,7 @@ router.post('/me/reauth', authMiddleware, async (req, res) => {
 
     const ok = await verifyPassword(rows[0].password_hash, password);
     if (!ok) {
-      audit.log({ userId: req.user.id, actionType: 'reauth_failed', resourceType: 'user', ip: req.ip });
+      eventBus.publish(new DomainEvent('reauth_failed', { userId: req.user.id, resourceType: 'user', ip: req.ip }));
       return res.status(403).json({ error: 'Incorrect password.' });
     }
 
@@ -143,7 +142,7 @@ router.patch('/me/password', authMiddleware, async (req, res) => {
 
     const ok = await verifyPassword(rows[0].password_hash, currentPassword);
     if (!ok) {
-      audit.log({ userId: req.user.id, actionType: 'password_change_failed', resourceType: 'user', ip: req.ip });
+      eventBus.publish(new DomainEvent('password_change_failed', { userId: req.user.id, resourceType: 'user', ip: req.ip }));
       return res.status(403).json({ error: 'Incorrect current password.' });
     }
 
@@ -167,7 +166,7 @@ router.patch('/me/password', authMiddleware, async (req, res) => {
       currentTokenHash,
     ]);
 
-    audit.log({ userId: req.user.id, actionType: 'password_changed', resourceType: 'user', ip: req.ip });
+    eventBus.publish(new DomainEvent('password_changed', { userId: req.user.id, resourceType: 'user', ip: req.ip }));
 
     res.json({ message: 'Password changed successfully.' });
   } catch (err) {
@@ -186,7 +185,7 @@ router.delete('/me', authMiddleware, async (req, res) => {
   // /adm/account/delete page — is the real boundary (SR-25): the endpoint must
   // reject a direct API call, otherwise removing the UI achieves nothing. (FR-05)
   if (req.user.role === 'admin') {
-    audit.log({ userId: req.user.id, actionType: 'account_delete_denied_admin', resourceType: 'user', ip: req.ip, level: 'warn' });
+    eventBus.publish(new DomainEvent('account_delete_denied_admin', { userId: req.user.id, resourceType: 'user', ip: req.ip, level: 'warn' }));
     return res.status(403).json({ error: 'Administrators cannot delete their own account.' });
   }
 
@@ -205,7 +204,7 @@ router.delete('/me', authMiddleware, async (req, res) => {
 
     const ok = await verifyPassword(rows[0].password_hash, password);
     if (!ok) {
-      audit.log({ userId: req.user.id, actionType: 'account_delete_failed', resourceType: 'user', ip: req.ip });
+      eventBus.publish(new DomainEvent('account_delete_failed', { userId: req.user.id, resourceType: 'user', ip: req.ip }));
       return res.status(403).json({ error: 'Incorrect password.' });
     }
 
@@ -245,13 +244,12 @@ router.delete('/me', authMiddleware, async (req, res) => {
     // irreversible destruction of the record, exactly like the admin-initiated
     // ADMIN_DELETE_USER path. It should stand out in the audit log viewer
     // rather than blend in with routine info-level activity.
-    audit.log({
+    eventBus.publish(new DomainEvent('account_deleted', {
       userId: req.user.id,
-      actionType: 'account_deleted',
       resourceType: 'user',
       ip: req.ip,
       level: 'warn'
-    });
+    }));
 
     res.json({ message: 'Account deleted.' });
 
