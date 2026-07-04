@@ -10,10 +10,12 @@ const baseURL = process.env.BASE_URL ?? "http://localhost:8080";
 
 export default defineConfig({
   testDir: "./tests",
-  fullyParallel: true,
+  // ORCA allows one live session per account (SR-23). Seed users are shared
+  // across tests, so parallel logins for the same email return 409 and stay on /login.
+  fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 2 : undefined,
+  workers: 1,
   reporter: process.env.CI
     ? [["github"], ["html", { open: "never" }], ["list"]]
     : [["html", { open: "on-failure" }], ["list"]],
