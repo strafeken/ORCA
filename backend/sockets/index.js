@@ -34,6 +34,12 @@ const initSocket = (httpServer) => {
   });
 
   io.on('connection', (socket) => {
+    // Personal room for user-level notifications (e.g. a new conversation
+    // started by the other party) that must reach a user even when they have
+    // no specific conversation open. Safe because the socket is already
+    // authenticated to this exact user id above.
+    socket.join(`user:${socket.user.id}`);
+
     system.info('Socket connected', { context: 'socket', userId: socket.user.id });
     registerChatHandlers(io, socket);
     registerWebRTCHandlers(io, socket);
