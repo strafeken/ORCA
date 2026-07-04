@@ -1,6 +1,11 @@
 const pool = require('../db/pool').promise();
 const { hashToken } = require('../utils/tokens');
 const { INACTIVITY_TIMEOUT_MS } = require('../middleware/authMiddleware');
+const { SessionRepository } = require('../repositories/SessionRepository');
+
+// Session-table access is delegated to SessionRepository; guards keep the
+// idle-timeout policy and the participant check (still on its own query for now).
+const sessionRepo = new SessionRepository();
 
 /**
  * Shared access-control guards for socket handlers (SR-04).
@@ -22,26 +27,17 @@ const { INACTIVITY_TIMEOUT_MS } = require('../middleware/authMiddleware');
 
 /** Handshake-time: map a raw access token to a live session id, or null. */
 async function resolveSession(token) {
-  const [rows] = await pool.query(
-    `SELECT id, last_activity FROM sessions
-      WHERE token_hash = ? AND revoked = FALSE AND expires_at > NOW()
-      LIMIT 1`,
-    [hashToken(token)]
-  );
-  if (!rows.length) return null;
-  const idleMs = Date.now() - new Date(rows[0].last_activity).getTime();
+  const session = await sessionRepo.findLiveByTokenHash(hashToken(token));
+  if (!session) return null;
+  const idleMs = Date.now() - new Date(session.last_activity).getTime();
   if (idleMs > INACTIVITY_TIMEOUT_MS) return null;
-  return rows[0].id;
+  return session.id;
 }
 
 /** Event-time: is the session this socket connected with still valid? */
 async function isSessionLive(sessionId) {
   if (!sessionId) return false;
-  const [rows] = await pool.query(
-    'SELECT id FROM sessions WHERE id = ? AND revoked = FALSE AND expires_at > NOW() LIMIT 1',
-    [sessionId]
-  );
-  return rows.length > 0;
+  return sessionRepo.isLiveById(sessionId);
 }
 
 /**
