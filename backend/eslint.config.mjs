@@ -33,6 +33,14 @@ export default [
       'no-unsanitized/method': 'error',
       'no-unsanitized/property': 'error',
       'no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+      // The audit trail is written in exactly one place
+      // (domain/events/AuditObserver, via `this.audit.log`). Everywhere else,
+      // publish a DomainEvent to the eventBus instead of calling audit.log
+      // directly — so no lane can silently bypass the audit log (SR-29/SR-30).
+      'no-restricted-syntax': ['error', {
+        selector: "CallExpression[callee.object.name='audit'][callee.property.name='log']",
+        message: 'Do not call audit.log directly — publish a DomainEvent to the eventBus (domain/events). AuditObserver is the sole audit writer.',
+      }],
     },
   },
   {
