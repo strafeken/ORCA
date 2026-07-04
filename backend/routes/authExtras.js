@@ -8,7 +8,8 @@ const { sendActionEmail } = require('../utils/mailer');
 const { setupTotp, confirmTotp, verifyTotp, hasTotp, disableTotp } = require('../utils/totp');
 const { authMiddleware } = require('../middleware/authMiddleware');
 const { authLimiter } = require('../middleware/authRateLimiter');
-const { system, audit } = require('../utils/winstonLogger');
+const { system } = require('../utils/winstonLogger');
+const { eventBus, DomainEvent } = require('../domain/events');
 
 const APP_URL = process.env.APP_URL || 'http://localhost';
 
@@ -53,7 +54,7 @@ router.get('/verify-email', async (req, res) => {
       return res.status(400).json({ error: 'This verification link is invalid or has expired.' });
     }
     await pool.query('UPDATE users SET is_verified = TRUE WHERE id = ?', [userId]);
-    audit.log({ userId, actionType: 'email_verified', ip: req.ip });
+    eventBus.publish(new DomainEvent('email_verified', { userId, ip: req.ip }));
     return res.json({ message: 'Email verified. You can now log in.' });
   } catch (err) {
     system.error('Verify-email error', { context: 'auth', error: err.message });
@@ -117,7 +118,7 @@ router.post('/forgot-password', authLimiter, async (req, res) => {
         link,
         buttonText: 'Reset password',
       });
-      audit.log({ userId: user.id, actionType: 'password_reset_requested', ip: req.ip });
+      eventBus.publish(new DomainEvent('password_reset_requested', { userId: user.id, ip: req.ip }));
     }
     return res.json(generic);
   } catch (err) {
@@ -163,7 +164,7 @@ router.post('/reset-password', authLimiter, async (req, res) => {
     // previously-stolen session can't survive a reset.
     await pool.query('UPDATE sessions SET revoked = TRUE WHERE user_id = ?', [userId]);
 
-    audit.log({ userId, actionType: 'password_reset_completed', ip: req.ip });
+    eventBus.publish(new DomainEvent('password_reset_completed', { userId, ip: req.ip }));
     return res.json({ message: 'Password updated. You can now log in.' });
   } catch (err) {
     system.error('Reset-password error', { context: 'auth', error: err.message });
@@ -196,7 +197,7 @@ router.post('/totp/enable', authMiddleware, async (req, res) => {
     // Mark it confirmed — this is the point at which 2FA becomes active and
     // login will start requiring a code (hasTotp only counts confirmed secrets).
     await confirmTotp(req.user.id);
-    audit.log({ userId: req.user.id, actionType: 'totp_enabled', ip: req.ip });
+    eventBus.publish(new DomainEvent('totp_enabled', { userId: req.user.id, ip: req.ip }));
     return res.json({ message: 'Two-factor authentication enabled.' });
   } catch (err) {
     system.error('TOTP enable error', { context: 'auth', error: err.message });
@@ -214,7 +215,7 @@ router.post('/totp/disable', authMiddleware, async (req, res) => {
       if (!ok) return res.status(400).json({ error: 'Invalid code.' });
     }
     await disableTotp(req.user.id);
-    audit.log({ userId: req.user.id, actionType: 'totp_disabled', ip: req.ip });
+    eventBus.publish(new DomainEvent('totp_disabled', { userId: req.user.id, ip: req.ip }));
     return res.json({ message: 'Two-factor authentication disabled.' });
   } catch (err) {
     system.error('TOTP disable error', { context: 'auth', error: err.message });
