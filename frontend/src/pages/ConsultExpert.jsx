@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { io } from "socket.io-client";
 import { useAuth } from "../auth/useAuth";
 import { apiFetch } from "../auth/api";
 import ConsultThread from "../components/ConsultThread";
@@ -12,7 +13,7 @@ import ConsultThread from "../components/ConsultThread";
  * video inline in the same page (no separate conversation route).
  */
 export default function ConsultExpert() {
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const isWorker = user?.role === "worker";
 
@@ -74,6 +75,18 @@ export default function ConsultExpert() {
   useEffect(() => {
     fetchConsultData();
   }, [fetchConsultData]);
+
+  // Real-time list updates: the backend puts every socket in a `user:<id>`
+  // room and emits `conversation:new` there when the other party starts a
+  // conversation. Refetch so a brand-new chat appears without a manual reload.
+  useEffect(() => {
+    if (!token) return;
+    const socket = io("/", { auth: { token }, path: "/socket.io" });
+    socket.on("conversation:new", () => {
+      fetchConsultData();
+    });
+    return () => socket.disconnect();
+  }, [token, fetchConsultData]);
 
   const contactedExpertIds = useMemo(
     () => new Set(conversations.map((c) => c.counterpart_id)),

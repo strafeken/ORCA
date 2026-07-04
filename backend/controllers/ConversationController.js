@@ -41,6 +41,18 @@ class ConversationController {
       if (!result) {
         return res.status(404).json({ error: 'Expert not found or not available.' });
       }
+      // Real-time: on a brand-new conversation, notify both participants'
+      // personal socket rooms so an open consult list updates without a manual
+      // refresh (merged from the real-time feature). The socket io instance is
+      // attached to the app in server.js.
+      if (result.created) {
+        const io = req.app.get('io');
+        if (io) {
+          const conversationId = result.conversation.id;
+          io.to(`user:${expertId}`).emit('conversation:new', { conversationId });
+          io.to(`user:${req.user.id}`).emit('conversation:new', { conversationId });
+        }
+      }
       res.status(result.created ? 201 : 200).json(result);
     } catch (err) {
       system.error('Failed to create conversation', { context: 'conversations', error: err.message });
