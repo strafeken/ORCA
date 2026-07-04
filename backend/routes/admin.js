@@ -4,7 +4,8 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db/pool').promise();
 const { authMiddleware, requireRole } = require('../middleware/authMiddleware');
-const { system, audit } = require('../utils/winstonLogger');
+const { system } = require('../utils/winstonLogger');
+const { eventBus, DomainEvent } = require('../domain/events');
 const { categorizeAction } = require('../utils/auditCategories');
 const { computeSha256, UPLOAD_ROOT } = require('../middleware/upload');
 
@@ -181,12 +182,11 @@ router.get('/users', async (req, res) => {
         ORDER BY created_at DESC`
     );
 
-    audit.log({
+    eventBus.publish(new DomainEvent('ADMIN_LIST_USERS', {
       userId: req.user.id,
-      actionType: 'ADMIN_LIST_USERS',
       resourceType: 'user',
       ip: req.ip,
-    });
+    }));
 
     res.json({ users: rows });
   } catch (err) {
@@ -250,14 +250,13 @@ router.delete('/users/:id', async (req, res) => {
     // SR-29: full audit record for account deletion. level: 'warn' so this
     // stands out in the log viewer — irreversible-by-design account
     // deletions warrant more visibility than routine info-level actions.
-    audit.log({
+    eventBus.publish(new DomainEvent('ADMIN_DELETE_USER', {
       userId: req.user.id,
-      actionType: 'ADMIN_DELETE_USER',
       resourceType: 'user',
       resourceId: targetId,
       ip: req.ip,
       level: 'warn',
-    });
+    }));
 
     system.info('Admin deleted user account (soft)', {
       context: 'admin',
@@ -324,13 +323,12 @@ router.patch('/users/:id/approve', async (req, res) => {
       });
     }
 
-    audit.log({
+    eventBus.publish(new DomainEvent(approved ? 'ADMIN_APPROVE_EXPERT' : 'ADMIN_REVOKE_EXPERT', {
       userId: req.user.id,
-      actionType: approved ? 'ADMIN_APPROVE_EXPERT' : 'ADMIN_REVOKE_EXPERT',
       resourceType: 'user',
       resourceId: targetId,
       ip: req.ip,
-    });
+    }));
 
     res.json({ message: `Expert ${approved ? 'approved' : 'approval revoked'}.` });
   } catch (err) {
@@ -368,13 +366,12 @@ router.patch('/users/:id/unlock', async (req, res) => {
       [targetId]
     );
 
-    audit.log({
+    eventBus.publish(new DomainEvent('ADMIN_UNLOCK_ACCOUNT', {
       userId: req.user.id,
-      actionType: 'ADMIN_UNLOCK_ACCOUNT',
       resourceType: 'user',
       resourceId: targetId,
       ip: req.ip,
-    });
+    }));
 
     res.json({ message: 'Account unlocked.' });
   } catch (err) {
@@ -453,13 +450,12 @@ router.delete('/sessions/:id', async (req, res) => {
 
     await pool.query('UPDATE sessions SET revoked = TRUE WHERE id = ?', [sessionId]);
 
-    audit.log({
+    eventBus.publish(new DomainEvent('ADMIN_TERMINATE_SESSION', {
       userId: req.user.id,
-      actionType: 'ADMIN_TERMINATE_SESSION',
       resourceType: 'session',
       resourceId: sessionId,
       ip: req.ip,
-    });
+    }));
 
     res.json({ message: 'Session terminated.' });
   } catch (err) {
@@ -564,13 +560,12 @@ router.get('/conversations/:id/messages', async (req, res) => {
     );
 
     // Log every admin read of a chat log (SR-29).
-    audit.log({
+    eventBus.publish(new DomainEvent('ADMIN_READ_CHAT_LOG', {
       userId: req.user.id,
-      actionType: 'ADMIN_READ_CHAT_LOG',
       resourceType: 'conversation',
       resourceId: convId,
       ip: req.ip,
-    });
+    }));
 
     res.json({ messages });
   } catch (err) {
@@ -615,13 +610,12 @@ async function streamConversationMedia(req, res, { sql, idParam, action, resourc
       return res.status(409).json({ error: 'File integrity check failed.' });
     }
 
-    audit.log({
+    eventBus.publish(new DomainEvent(action, {
       userId: req.user.id,
-      actionType: action,
       resourceType,
       resourceId: mediaId,
       ip: req.ip,
-    });
+    }));
 
     res.setHeader('Content-Type', record.mime_type || fallbackType);
     if (record.original_filename) {
@@ -697,14 +691,13 @@ router.delete('/conversations/:id', async (req, res) => {
     // Write the audit entry FIRST — if the DELETE fails, the log still
     // records the attempt. The Loki sink is append-only (SR-30).
     // level: 'warn' — permanent chat log deletion warrants standing out.
-    audit.log({
+    eventBus.publish(new DomainEvent('ADMIN_DELETE_CHAT_LOG', {
       userId: req.user.id,
-      actionType: 'ADMIN_DELETE_CHAT_LOG',
       resourceType: 'conversation',
       resourceId: convId,
       ip: req.ip,
       level: 'warn',
-    });
+    }));
 
     // Delete every row tied to the conversation atomically. FK order matters:
     // annotations reference files; messages/files/voice_messages reference the
