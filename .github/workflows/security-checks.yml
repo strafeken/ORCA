@@ -155,6 +155,7 @@ jobs:
 
   sast-sonarqube:
     name: "SAST: SonarQube"
+    if: github.actor != 'dependabot[bot]'
     runs-on: [self-hosted, ec2]
     steps:
       - name: Checkout code
