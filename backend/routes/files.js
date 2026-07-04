@@ -7,7 +7,8 @@ const pool = require('../db/pool').promise();
 const { authMiddleware, requireRole } = require('../middleware/authMiddleware');
 const { isParticipant } = require('../utils/conversationRepository');
 const { sanitizeFilename } = require('../utils/sanitize');
-const { system, audit } = require('../utils/winstonLogger');
+const { system } = require('../utils/winstonLogger');
+const { eventBus, DomainEvent } = require('../domain/events');
 const {
   uploadFile,
   uploadVoice,
@@ -104,13 +105,12 @@ router.post('/:id/files', ...guard, uploadFile.single('file'), async (req, res) 
       uploaded_at: new Date().toISOString(),
     };
 
-    audit.log({
+    eventBus.publish(new DomainEvent('FILE_UPLOADED', {
       userId: req.user.id,
-      actionType: 'FILE_UPLOADED',
       resourceType: 'file',
       resourceId: result.insertId,
       ip: req.ip,
-    });
+    }));
 
     req.app.get('io')?.to(`chat:${req.conversationId}`).emit('chat:file', fileRecord);
 
@@ -168,13 +168,12 @@ router.get('/:id/files/:fileId', ...guard, async (req, res) => {
     }
 
     // SR-29: audit every file download so access to sensitive site media is traceable.
-    audit.log({
+    eventBus.publish(new DomainEvent('FILE_DOWNLOADED', {
       userId: req.user.id,
-      actionType: 'FILE_DOWNLOADED',
       resourceType: 'file',
       resourceId: fileId,
       ip: req.ip,
-    });
+    }));
 
     res.setHeader('Content-Type', record.mime_type);
     res.setHeader('Content-Disposition', `inline; filename="${record.original_filename}"`);
@@ -228,13 +227,12 @@ router.post('/:id/voice', ...guard, uploadVoice.single('audio'), async (req, res
       uploaded_at: new Date().toISOString(),
     };
 
-    audit.log({
+    eventBus.publish(new DomainEvent('VOICE_MESSAGE_UPLOADED', {
       userId: req.user.id,
-      actionType: 'VOICE_MESSAGE_UPLOADED',
       resourceType: 'voice_message',
       resourceId: result.insertId,
       ip: req.ip,
-    });
+    }));
 
     req.app.get('io')?.to(`chat:${req.conversationId}`).emit('chat:voice', voiceRecord);
 
@@ -299,13 +297,12 @@ router.get('/:id/voice/:voiceId', ...guard, async (req, res) => {
     }
 
     // SR-29: audit every voice message download so access to recordings is traceable.
-    audit.log({
+    eventBus.publish(new DomainEvent('VOICE_MESSAGE_DOWNLOADED', {
       userId: req.user.id,
-      actionType: 'VOICE_MESSAGE_DOWNLOADED',
       resourceType: 'voice_message',
       resourceId: voiceId,
       ip: req.ip,
-    });
+    }));
 
     res.setHeader('Content-Type', 'audio/webm');
     fs.createReadStream(absolutePath).pipe(res);
