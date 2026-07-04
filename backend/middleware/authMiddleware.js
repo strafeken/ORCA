@@ -1,6 +1,10 @@
 const { verifyToken, hashToken } = require('../utils/tokens');
-const pool = require('../db/pool').promise();
 const { system } = require('../utils/winstonLogger');
+const { SessionRepository } = require('../repositories/SessionRepository');
+
+// Session-table access is delegated to SessionRepository; this middleware keeps
+// the JWT check and the idle-timeout / touch policy.
+const sessionRepo = new SessionRepository();
 
 /**
  * authMiddleware — verifies the access token on protected API routes.
@@ -61,20 +65,14 @@ function makeAuthMiddleware({ touch = true } = {}) {
     // Step 2 & 3 — check the session row is still live (not revoked) and has
     // not gone idle past the inactivity timeout.
     try {
-      const [rows] = await pool.query(
-        `SELECT id, revoked, last_activity FROM sessions
-          WHERE token_hash = ? AND revoked = FALSE
-          LIMIT 1`,
-        [hashToken(token)]
-      );
+      const session = await sessionRepo.findByTokenHash(hashToken(token));
 
-      if (!rows.length) {
+      if (!session) {
         // Session was revoked (by admin termination, logout, expert-approval
         // revocation, or account deletion).
         return res.status(401).json({ error: 'Session has been revoked.' });
       }
 
-      const session = rows[0];
       const idleMs = Date.now() - new Date(session.last_activity).getTime();
 
       if (idleMs > INACTIVITY_TIMEOUT_MS) {
@@ -82,7 +80,7 @@ function makeAuthMiddleware({ touch = true } = {}) {
         // rejecting this one request) means it disappears from the admin
         // "active sessions" list immediately and can't be reused even if a
         // stray background request slips in after this check.
-        await pool.query('UPDATE sessions SET revoked = TRUE WHERE id = ?', [session.id]);
+        await sessionRepo.revokeById(session.id);
         return res.status(401).json({ error: 'Session expired due to inactivity.' });
       }
 
@@ -90,7 +88,7 @@ function makeAuthMiddleware({ touch = true } = {}) {
         // Sliding window: this was a real user-initiated request, so reset
         // the idle clock. Fire-and-forget would risk losing the update under
         // load; awaiting keeps it simple and correct at this scale.
-        await pool.query('UPDATE sessions SET last_activity = NOW() WHERE id = ?', [session.id]);
+        await sessionRepo.touch(session.id);
       }
     } catch (err) {
       system.error('Session revocation/inactivity check failed', {
