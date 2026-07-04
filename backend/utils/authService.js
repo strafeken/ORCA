@@ -1,4 +1,3 @@
-const pool = require('../db/pool').promise();
 const { verifyPassword } = require('./password');
 const {
   issueAccessToken,
@@ -8,11 +7,12 @@ const {
 } = require('./tokens');
 const { audit } = require('./winstonLogger');
 const { SessionRepository } = require('../repositories/SessionRepository');
+const { UserRepository } = require('../repositories/UserRepository');
 
-// Data access to the sessions table is delegated to SessionRepository; the
-// user-table queries still live inline below (a later increment extracts them
-// into a UserRepository).
+// authService is now a pure orchestrator: all data access is delegated to
+// repositories, so it holds no SQL of its own.
 const sessionRepo = new SessionRepository();
+const userRepo = new UserRepository();
 
 /**
  * Authentication service — the single shared core used by BOTH the public
@@ -67,11 +67,7 @@ const AuthResult = {
 async function authenticateUser(email, password, ip = null) {
   // Look the user up by email. We always run the password verification path
   // even when the user doesn't exist (see below) to keep timing uniform.
-  const [rows] = await pool.query(
-    'SELECT * FROM users WHERE email = ? LIMIT 1',
-    [email]
-  );
-  const user = rows[0];
+  const user = await userRepo.findByEmail(email);
 
   // Account enumeration defense: if the email is unknown, we still perform a
   // verify against a dummy hash so the response time is similar whether or not
@@ -113,12 +109,7 @@ async function authenticateUser(email, password, ip = null) {
   }
 
   // Success — reset the failure counter and clear any soft lock.
-  await pool.query(
-    `UPDATE users
-       SET failed_attempts = 0, is_soft_locked = FALSE, soft_lock_until = NULL
-     WHERE id = ?`,
-    [user.id]
-  );
+  await userRepo.resetFailedAttempts(user.id);
 
   return { result: AuthResult.SUCCESS, user };
 }
@@ -138,10 +129,7 @@ async function registerFailedAttempt(user, ip = null) {
   const attempts = user.failed_attempts + 1;
 
   if (attempts >= HARD_LOCK_THRESHOLD) {
-    await pool.query(
-      `UPDATE users SET failed_attempts = ?, is_hard_locked = TRUE WHERE id = ?`,
-      [attempts, user.id]
-    );
+    await userRepo.applyHardLock(user.id, attempts);
     audit.log({
       userId: user.id,
       actionType: 'ACCOUNT_HARD_LOCKED',
@@ -155,12 +143,7 @@ async function registerFailedAttempt(user, ip = null) {
 
   if (attempts >= SOFT_LOCK_THRESHOLD) {
     const until = new Date(Date.now() + SOFT_LOCK_MINUTES * 60 * 1000);
-    await pool.query(
-      `UPDATE users
-         SET failed_attempts = ?, is_soft_locked = TRUE, soft_lock_until = ?
-       WHERE id = ?`,
-      [attempts, until, user.id]
-    );
+    await userRepo.applySoftLock(user.id, attempts, until);
     // Only fire once, on the request that actually crosses the threshold —
     // user.failed_attempts is the count BEFORE this attempt, so this check
     // (rather than re-checking is_soft_locked, which would now be true on
@@ -178,10 +161,7 @@ async function registerFailedAttempt(user, ip = null) {
     return;
   }
 
-  await pool.query(
-    `UPDATE users SET failed_attempts = ? WHERE id = ?`,
-    [attempts, user.id]
-  );
+  await userRepo.incrementFailedAttempts(user.id, attempts);
 }
 
 /**
