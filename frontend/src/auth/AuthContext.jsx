@@ -1,4 +1,5 @@
 import { useMemo, useState, useCallback, useEffect, useRef } from "react";
+import { useLocation } from "react-router-dom";
 import { AuthContext } from "./context";
 import { apiFetch, STORAGE_KEY, REFRESH_KEY, fetchCsrfToken, CSRF_KEY } from "./api";
 
@@ -76,6 +77,11 @@ export function AuthProvider({ children }) {
   // function like Date.now() directly in render is flagged by React's
   // purity rule (effects, unlike render, are allowed to be impure).
   const lastActivityRef = useRef(null);
+
+  // Current route — used to treat navigation as user activity (see the effect
+  // further down). AuthProvider is rendered inside <BrowserRouter>, so this is
+  // available here.
+  const location = useLocation();
 
   const persist = useCallback((newToken, refreshToken) => {
     if (newToken) {
@@ -178,6 +184,26 @@ export function AuthProvider({ children }) {
       ACTIVITY_EVENTS.forEach((evt) => window.removeEventListener(evt, markActive));
     };
   }, []);
+
+  /**
+   * Navigation counts as activity. A static page like the dashboard makes no
+   * API call of its own, so without this, moving there would neither reset the
+   * client idle clock (for programmatic/back-forward navigation that fires no
+   * DOM event) nor the server's last_activity. On every route change we mark
+   * the user active locally and — while signed in — ping the touching
+   * /api/auth/activity endpoint so the server's 15-minute inactivity clock
+   * resets too. (A background poll is deliberately NOT counted as activity; a
+   * deliberate navigation is.)
+   */
+  useEffect(() => {
+    lastActivityRef.current = Date.now();
+    if (sessionStorage.getItem(STORAGE_KEY)) {
+      apiFetch("/api/auth/activity").catch(() => {
+        // A failed touch is non-fatal: a genuinely dead session is handled by
+        // apiFetch's global 401 logic; transient errors are ignored.
+      });
+    }
+  }, [location.pathname]);
 
   /**
    * Session heartbeat + idle timeout + silent token refresh.

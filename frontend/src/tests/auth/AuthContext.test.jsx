@@ -1,5 +1,6 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 
 // Mock the API layer. AuthContext imports several named exports from ./api.
 const mockApiFetch = vi.fn();
@@ -29,10 +30,14 @@ function AuthProbe() {
 }
 
 function renderAuth() {
+  // AuthProvider uses useLocation() (navigation counts as activity), so it must
+  // render inside a Router.
   return render(
-    <AuthProvider>
-      <AuthProbe />
-    </AuthProvider>
+    <MemoryRouter>
+      <AuthProvider>
+        <AuthProbe />
+      </AuthProvider>
+    </MemoryRouter>
   );
 }
 

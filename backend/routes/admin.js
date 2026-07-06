@@ -156,7 +156,7 @@ router.get('/logs', async (req, res) => {
     res.json({ logs });
   } catch (err) {
     system.error('Failed to fetch logs from Loki', { context: 'admin', error: err.message });
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Could not fetch logs.' });
   }
 });
 

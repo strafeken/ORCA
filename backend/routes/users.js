@@ -18,7 +18,7 @@ router.get('/', authMiddleware, requireRole('admin'), async (req, res) => {
     res.json(results);
   } catch (err) {
     console.error('Query error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Could not fetch users.' });
   }
 });
 
@@ -37,7 +37,7 @@ router.get('/me', authMiddleware, async (req, res) => {
     res.json(results[0]);
   } catch (err) {
     console.error('Query error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Could not load your profile.' });
   }
 });
 
@@ -88,7 +88,7 @@ router.patch('/me', authMiddleware, async (req, res) => {
     res.json(results[0]);
   } catch (err) {
     console.error('Query error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Could not update your profile.' });
   }
 });
 

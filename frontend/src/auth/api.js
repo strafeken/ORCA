@@ -152,8 +152,9 @@ export async function apiFetch(url, options = {}) {
   // handled separately below.)
   if (response.status === 403 && mutating) {
     const errorData = await response.clone().json().catch(() => ({}));
-    const errMsg = `${errorData.error || ""} ${errorData.message || ""}`.toLowerCase();
-    if (errMsg.includes("csrf")) {
+    // Detect the CSRF rejection by its machine code, not the user-facing text —
+    // that text is intentionally generic and no longer mentions CSRF.
+    if (errorData.code === "CSRF_INVALID") {
 
       // Force a fresh token bound to the current identity — bypass any in-flight
       // fetch that may have started under the previous session identifier.
