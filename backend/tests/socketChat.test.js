@@ -96,4 +96,33 @@ describe('registerChatHandlers', () => {
     handlers.get('chat:leave')({ conversationId: 'notanumber' });
     expect(socket.leave).not.toHaveBeenCalled();
   });
+
+  test('chat:send rejects an invalid conversation id (SR-07)', async () => {
+    const { socket, handlers } = makeSocket();
+    registerChatHandlers({}, socket);
+    await handlers.get('chat:send')({ conversationId: 'bad', content: 'hi' });
+    expect(socket.emit).toHaveBeenCalledWith('chat:error', expect.objectContaining({
+      message: expect.stringMatching(/invalid conversation/i),
+    }));
+  });
+
+  test('chat:send requires the socket to have joined the room first', async () => {
+    const { socket, handlers } = makeSocket();
+    registerChatHandlers({}, socket);
+    // Valid id, but the socket never joined chat:5.
+    await handlers.get('chat:send')({ conversationId: 5, content: 'hello' });
+    expect(socket.emit).toHaveBeenCalledWith('chat:error', expect.objectContaining({
+      message: expect.stringMatching(/join the conversation/i),
+    }));
+  });
+
+  test('chat:send silently drops an empty (whitespace-only) message', async () => {
+    const io = { to: jest.fn(() => ({ emit: jest.fn() })) };
+    const { socket, handlers } = makeSocket();
+    socket.rooms.add('chat:5'); // has joined
+    registerChatHandlers(io, socket);
+    await handlers.get('chat:send')({ conversationId: 5, content: '    ' });
+    // No broadcast for an empty message.
+    expect(io.to).not.toHaveBeenCalled();
+  });
 });

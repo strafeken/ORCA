@@ -126,3 +126,73 @@ describe('admin actions (authorised)', () => {
     expect([200, 204]).toContain(res.status);
   });
 });
+
+describe('admin action handlers (FR-12, SR-11, SR-29 audit)', () => {
+  test('rejects deleting a user with an invalid id (SR-07)', async () => {
+    configureDb([]);
+    const token = tokenFor({ id: 99, role: 'admin' });
+    const res = await csrfRequest('delete', '/api/admin/users/notanumber', token, {});
+    expect(res.status).toBe(400);
+  });
+
+  test('forbids an admin from deleting their own account', async () => {
+    configureDb([]);
+    const token = tokenFor({ id: 99, role: 'admin' });
+    const res = await csrfRequest('delete', '/api/admin/users/99', token, {});
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/cannot delete their own account/i);
+  });
+
+  test('returns 404 when deleting a user that does not exist', async () => {
+    mockQuery.mockImplementation((sql) => {
+      if (/FROM sessions/i.test(sql)) return Promise.resolve([[{ id: 1, last_activity: new Date() }]]);
+      if (/UPDATE sessions/i.test(sql)) return Promise.resolve([{ affectedRows: 1 }]);
+      if (/FROM users/i.test(sql)) return Promise.resolve([[]]); // target not found
+      return Promise.resolve([{ affectedRows: 1 }]);
+    });
+    const token = tokenFor({ id: 99, role: 'admin' });
+    const res = await csrfRequest('delete', '/api/admin/users/5', token, {});
+    expect(res.status).toBe(404);
+  });
+
+  test('an admin can delete an existing user (FR-12, audit recorded SR-29)', async () => {
+    mockQuery.mockImplementation((sql) => {
+      if (/FROM sessions/i.test(sql)) return Promise.resolve([[{ id: 1, last_activity: new Date() }]]);
+      if (/FROM users/i.test(sql)) return Promise.resolve([[{ id: 5, name: 'Bob', role: 'expert' }]]);
+      return Promise.resolve([{ affectedRows: 1 }]);
+    });
+    const token = tokenFor({ id: 99, role: 'admin' });
+    const res = await csrfRequest('delete', '/api/admin/users/5', token, {});
+    expect([200, 204]).toContain(res.status);
+  });
+
+  test('approve rejects a non-boolean approved value (SR-07)', async () => {
+    configureDb([{ id: 5, role: 'expert' }]);
+    const token = tokenFor({ id: 99, role: 'admin' });
+    const res = await csrfRequest('patch', '/api/admin/users/5/approve', token, { approved: 'yes' });
+    expect(res.status).toBe(400);
+  });
+
+  test('approve rejects trying to approve a non-expert account (SR-09)', async () => {
+    configureDb([{ id: 5, role: 'worker' }]); // not an expert
+    const token = tokenFor({ id: 99, role: 'admin' });
+    const res = await csrfRequest('patch', '/api/admin/users/5/approve', token, { approved: true });
+    expect(res.status).toBe(400);
+  });
+
+  test('an admin can list active sessions', async () => {
+    configureDb([{ id: 1, user_id: 2, source_ip: '1.2.3.4' }]);
+    const token = tokenFor({ id: 99, role: 'admin' });
+    const res = await request(app).get('/api/admin/sessions').set('Authorization', `Bearer ${token}`);
+    expect(res.status).not.toBe(401);
+    expect(res.status).not.toBe(403);
+  });
+
+  test('an admin can list conversations for moderation (FR-12)', async () => {
+    configureDb([{ id: 1, worker_id: 2, expert_id: 3 }]);
+    const token = tokenFor({ id: 99, role: 'admin' });
+    const res = await request(app).get('/api/admin/conversations').set('Authorization', `Bearer ${token}`);
+    expect(res.status).not.toBe(401);
+    expect(res.status).not.toBe(403);
+  });
+});

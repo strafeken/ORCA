@@ -21,6 +21,10 @@ process.env.NODE_ENV = 'test';
 const mockQuery = jest.fn();
 jest.mock('../db/pool', () => ({ query: mockQuery, promise: () => ({ query: mockQuery }) }));
 jest.mock('../utils/mailer', () => ({ sendActionEmail: jest.fn().mockResolvedValue(true) }));
+jest.mock('../utils/oneTimeTokens', () => ({
+  issueToken: jest.fn().mockResolvedValue('rawtoken123'),
+  consumeToken: jest.fn(),
+}));
 jest.mock('../utils/winstonLogger', () => ({
   system: { info: jest.fn(), error: jest.fn(), warn: jest.fn() },
   audit: { log: jest.fn() },
@@ -76,6 +80,41 @@ describe('authExtras public flows (FR-01/02, SR-02/19/21)', () => {
     configureDb([]);
     const res = await csrfPost('/api/auth/totp/setup', null, {});
     expect(res.status).toBe(401);
+  });
+
+  test('GET /verify-email with a valid token activates the account (SR-19)', async () => {
+    const { consumeToken } = require('../utils/oneTimeTokens');
+    consumeToken.mockResolvedValueOnce(42); // token valid -> user id 42
+    configureDb([]);
+    const res = await request(app).get('/api/auth/verify-email?token=goodtoken');
+    expect(res.status).toBe(200);
+    expect(res.body.message).toMatch(/verified/i);
+  });
+
+  test('GET /verify-email with an invalid token is rejected', async () => {
+    const { consumeToken } = require('../utils/oneTimeTokens');
+    consumeToken.mockResolvedValueOnce(null); // invalid/expired
+    configureDb([]);
+    const res = await request(app).get('/api/auth/verify-email?token=badtoken');
+    expect(res.status).toBe(400);
+  });
+
+  test('POST /resend-verification returns a generic response (anti-enumeration)', async () => {
+    configureDb([[]]); // no user found
+    const res = await csrfPost('/api/auth/resend-verification', null, { email: 'x@orca.com' });
+    expect(res.status).toBe(200);
+  });
+
+  test('POST /reset-password with a valid token is processed (SR-02)', async () => {
+    const { consumeToken } = require('../utils/oneTimeTokens');
+    consumeToken.mockResolvedValueOnce(42); // valid reset token -> user id 42
+    configureDb([{ id: 42 }]);
+    const res = await csrfPost('/api/auth/reset-password', null, {
+      token: 'goodreset', password: 'NewValidPass123!',
+    });
+    // A valid token gets past the "invalid or expired" 400 branch; the handler
+    // then proceeds to update the password (exact success shape varies).
+    expect(res.status).not.toBe(400);
   });
 });
 
