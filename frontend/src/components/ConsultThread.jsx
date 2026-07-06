@@ -4,6 +4,7 @@ import { useAuth } from "../auth/useAuth";
 import { apiFetch } from "../auth/api";
 import { useAuthedBlobUrl } from "../hooks/useAuthedBlobURL";
 import AnnotationCanvas from "./AnnotationCanvas";
+import { useCallGuard } from "./callGuard";
 
 const MAX_FILE_MB = 15;
 const MAX_VOICE_SECONDS = 300;
@@ -37,6 +38,7 @@ const ACTIVE_CALL_STATES = ["ringing", "connecting", "in-call"];
 export default function ConsultThread({ conversationId, counterpart, onCallActiveChange, onBack }) {
   const convId = conversationId;
   const { user, token } = useAuth();
+  const { setCallActive } = useCallGuard();
 
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
@@ -554,12 +556,21 @@ export default function ConsultThread({ conversationId, counterpart, onCallActiv
     return () => window.removeEventListener("beforeunload", warn);
   }, [callStatus]);
 
-  // #4 — let the parent (ConsultExpert) know when a call is active so it can
-  // confirm before switching conversations mid-call. Reset on unmount.
+  // #4 — publish "call active" both to the parent (ConsultExpert, which guards
+  // switching conversations mid-call) and to the shared CallGuardContext (which
+  // the navbar reads to guard navigating away mid-call). Reset both on unmount.
   useEffect(() => {
-    onCallActiveChange?.(ACTIVE_CALL_STATES.includes(callStatus));
-  }, [callStatus, onCallActiveChange]);
-  useEffect(() => () => onCallActiveChange?.(false), [onCallActiveChange]);
+    const active = ACTIVE_CALL_STATES.includes(callStatus);
+    onCallActiveChange?.(active);
+    setCallActive(active);
+  }, [callStatus, onCallActiveChange, setCallActive]);
+  useEffect(
+    () => () => {
+      onCallActiveChange?.(false);
+      setCallActive(false);
+    },
+    [onCallActiveChange, setCallActive]
+  );
 
   function sendMessage() {
     if (!input.trim() || !socketRef.current) return;

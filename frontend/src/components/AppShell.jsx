@@ -1,7 +1,9 @@
-import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
+import { useRef, useCallback, useMemo } from "react";
+import { Link, NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../auth/useAuth";
 import { OrcaWordmark } from "./Brand";
 import UserMenu from "./UserMenu";
+import { CallGuardContext, CALL_LEAVE_MESSAGE } from "./callGuard";
 
 /**
  * AppShell — the layout every authenticated page renders inside.
@@ -14,6 +16,32 @@ import UserMenu from "./UserMenu";
 export default function AppShell() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Shared "a call is active" flag, published by ConsultThread and read by the
+  // navbar links + account menu so they can confirm before navigating away.
+  const callActiveRef = useRef(false);
+  const setCallActive = useCallback((active) => {
+    callActiveRef.current = !!active;
+  }, []);
+  const callGuard = useMemo(() => ({ callActiveRef, setCallActive }), [setCallActive]);
+
+  // Confirm before a navbar navigation that would leave the current page (and
+  // thus end an active call). Skips same-page clicks (e.g. "Consult" while
+  // already on /consult) so they don't nag. On confirm we clear the flag; the
+  // call itself is torn down by ConsultThread's unmount cleanup.
+  const guardLeave = useCallback(
+    (e, to) => {
+      if (callActiveRef.current && to !== location.pathname) {
+        if (!window.confirm(CALL_LEAVE_MESSAGE)) {
+          e.preventDefault();
+          return;
+        }
+        callActiveRef.current = false;
+      }
+    },
+    [location.pathname]
+  );
 
   async function handleLogout() {
     await logout();
@@ -28,9 +56,15 @@ export default function AppShell() {
   ];
 
   return (
+    <CallGuardContext.Provider value={callGuard}>
     <div style={s.shell}>
       <header className="orca-appbar" style={s.bar}>
-        <Link to="/dashboard" className="orca-appbar-brand" style={{ textDecoration: "none" }}>
+        <Link
+          to="/dashboard"
+          className="orca-appbar-brand"
+          style={{ textDecoration: "none" }}
+          onClick={(e) => guardLeave(e, "/dashboard")}
+        >
           <OrcaWordmark size={24} />
         </Link>
 
@@ -41,6 +75,7 @@ export default function AppShell() {
               <NavLink
                 key={l.to}
                 to={l.to}
+                onClick={(e) => guardLeave(e, l.to)}
                 style={({ isActive }) => ({
                   ...s.link,
                   color: isActive ? "var(--orca-hi)" : "var(--orca-muted)",
@@ -67,6 +102,7 @@ export default function AppShell() {
         <Outlet />
       </main>
     </div>
+    </CallGuardContext.Provider>
   );
 }
 

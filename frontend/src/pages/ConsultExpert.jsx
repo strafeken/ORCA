@@ -4,6 +4,7 @@ import { io } from "socket.io-client";
 import { useAuth } from "../auth/useAuth";
 import { apiFetch } from "../auth/api";
 import ConsultThread from "../components/ConsultThread";
+import { CALL_LEAVE_MESSAGE } from "../components/callGuard";
 
 /**
  * ConsultExpert — Telegram-style consult hub for workers and experts.
@@ -164,7 +165,19 @@ export default function ConsultExpert() {
         <div style={s.sidebarHead}>
           <h1 style={s.sidebarTitle}>{isWorker ? "Consult an expert" : "Worker requests"}</h1>
           {isWorker && (
-            <Link to="/experts" style={s.directoryLink}>Full directory</Link>
+            <Link
+              to="/experts"
+              style={s.directoryLink}
+              onClick={(e) => {
+                // Same guard as the navbar/conversation-switch: this in-page
+                // link leaves /consult and would drop an active call.
+                if (callActiveRef.current && !window.confirm(CALL_LEAVE_MESSAGE)) {
+                  e.preventDefault();
+                }
+              }}
+            >
+              Full directory
+            </Link>
           )}
         </div>
 

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { useCallGuard, CALL_LEAVE_MESSAGE } from "./callGuard";
 
 /**
  * UserMenu — avatar trigger that opens a small account popover.
@@ -7,8 +8,24 @@ import { Link } from "react-router-dom";
 export default function UserMenu({ user, onLogout }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
+  const { callActiveRef, setCallActive } = useCallGuard();
 
   const initial = user?.name?.trim()?.[0]?.toUpperCase() || "?";
+
+  // Confirm before profile/sign-out navigation while a call is active (both
+  // leave the conversation page and end the call). Returns false if the user
+  // cancels, so the caller can abort. `e` is optional (the sign-out button has
+  // no navigation event to prevent).
+  function guardLeave(e) {
+    if (callActiveRef.current) {
+      if (!window.confirm(CALL_LEAVE_MESSAGE)) {
+        e?.preventDefault?.();
+        return false;
+      }
+      setCallActive(false);
+    }
+    return true;
+  }
 
   useEffect(() => {
     function handleClickOutside(e) {
@@ -54,12 +71,20 @@ export default function UserMenu({ user, onLogout }) {
 
           <div style={s.divider} />
 
-          <Link to="/profile" style={s.menuItem} onClick={() => setOpen(false)}>
+          <Link
+            to="/profile"
+            style={s.menuItem}
+            onClick={(e) => {
+              if (!guardLeave(e)) return;
+              setOpen(false);
+            }}
+          >
             Manage your profile
           </Link>
 
-          <button className="orca-btn orca-btn--ghost" style={{ marginTop: 12 }}
+          <button
             onClick={() => {
+              if (!guardLeave()) return;
               setOpen(false);
               onLogout();
             }}
