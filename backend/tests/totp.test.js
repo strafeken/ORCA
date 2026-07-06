@@ -60,7 +60,7 @@ describe('confirmTotp activates 2FA', () => {
 
 describe('verifyTotp', () => {
   const speakeasy = require('speakeasy');
-  const { verifyTotp, disableTotp } = require('../utils/totp');
+  const { verifyTotp } = require('../utils/totp');
 
   test('returns false when no secret is stored', async () => {
     mockQuery.mockResolvedValue([[]]);
