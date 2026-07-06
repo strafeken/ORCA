@@ -4,6 +4,7 @@ logs/
 .scannerwork/
 nginx/certs/
 backend/uploads/
+coverage/
 
 # Playwright E2E
 e2e/.env
