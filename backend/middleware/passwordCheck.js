@@ -11,8 +11,8 @@
  */
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
 const { system } = require('../utils/winstonLogger');
+const { hibpRangeDigest, hibpSuffixMatches } = require('../utils/hibpRangeDigest');
 const { MIN_PASSWORD_LENGTH, MAX_PASSWORD_LENGTH } = require('../constants/passwordPolicy');
 
 const BLOCKLIST_PATH = path.join(__dirname, '../data/common-passwords.txt');
@@ -33,7 +33,7 @@ const commonPasswords = new Set(
 function extractPassword(req) {
   if (typeof req.body?.password === 'string') return req.body.password;
   if (typeof req.body?.newPassword === 'string') return req.body.newPassword;
-  return undefined;
+  return null;
 }
 
 function collectContextBannedWords(req) {
@@ -79,9 +79,7 @@ function blocklistError(password) {
 }
 
 async function hibpBreachedError(password) {
-  const digest = crypto.createHash('sha1').update(password).digest('hex').toUpperCase();
-  const prefix = digest.slice(0, 5);
-  const suffix = digest.slice(5);
+  const { prefix, suffix } = hibpRangeDigest(password);
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), HIBP_TIMEOUT_MS);
@@ -103,7 +101,7 @@ async function hibpBreachedError(password) {
     const body = await response.text();
     for (const line of body.split('\n')) {
       const [hashSuffix] = line.trim().split(':');
-      if (hashSuffix === suffix) {
+      if (hibpSuffixMatches(hashSuffix, suffix)) {
         return 'This password has appeared in a known data breach. Choose a different password.';
       }
     }
@@ -121,7 +119,7 @@ async function hibpBreachedError(password) {
 
 async function passwordPolicyMiddleware(req, res, next) {
   const password = extractPassword(req);
-  if (password === undefined) {
+  if (typeof password !== 'string') {
     return res.status(400).json({ error: 'Password is required.' });
   }
 

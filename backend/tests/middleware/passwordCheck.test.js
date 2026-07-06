@@ -85,8 +85,7 @@ describe('passwordPolicyMiddleware (NIST SP 800-63B blocklist)', () => {
 
   test('rejects passwords found in the HIBP range response', async () => {
     const password = 'ValidPass1234!';
-    const digest = require('crypto').createHash('sha1').update(password).digest('hex').toUpperCase();
-    const suffix = digest.slice(5);
+    const { suffix } = require('../../utils/hibpRangeDigest').hibpRangeDigest(password);
 
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
