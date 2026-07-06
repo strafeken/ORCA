@@ -1,3 +1,6 @@
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
+
 const http = require('http');
 const app = require('./app');
 const { initSocket } = require('./sockets/index');

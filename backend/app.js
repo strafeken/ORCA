@@ -11,9 +11,12 @@ app.set('trust proxy', 1);
 const { generateCsrfToken, doubleCsrfProtection } = doubleCsrf({
   getSecret: () => {
     if (!process.env.CSRF_SECRET) {
-      system.error("CSRF_SECRET is missing from environment variables!", { context: "bootstrap" });
-      return "temporary-dev-secret-string-replace-this";
+      system.error("CSRF_SECRET is missing from environment variables!", {
+        context: "bootstrap"
+      });
+      throw new Error("CSRF_SECRET is required");
     }
+
     return process.env.CSRF_SECRET;
   },
   cookieName: '__Host-orca.x-csrf-token',
