@@ -1,4 +1,4 @@
-process.env.JWT_SECRET = 'test-secret-for-jest-only-1234567890';
+process.env.JWT_SECRET = process.env.JWT_SECRET || require('crypto').randomBytes(32).toString('hex');
 
 // Mock the guard + data deps that chat.js imports.
 const mockAuthorize = jest.fn();

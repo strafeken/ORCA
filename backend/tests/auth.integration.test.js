@@ -12,8 +12,11 @@
  * Test technique: supertest fires requests at the exported app without opening
  * a real network port.
  */
-process.env.JWT_SECRET = 'integration-test-secret-1234567890';
-process.env.CSRF_SECRET = 'integration-test-csrf-secret-1234567890';
+// Generate ephemeral test secrets at runtime (no hardcoded secret literals
+// for the secret scanner to flag; these never leave the test process).
+const { randomBytes } = require('crypto');
+process.env.JWT_SECRET = process.env.JWT_SECRET || randomBytes(32).toString('hex');
+process.env.CSRF_SECRET = process.env.CSRF_SECRET || randomBytes(32).toString('hex');
 process.env.NODE_ENV = 'test';
 
 // --- Mock the outermost I/O boundaries only ---
