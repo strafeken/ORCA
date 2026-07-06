@@ -20,7 +20,14 @@ process.env.CSRF_SECRET = process.env.CSRF_SECRET || randomBytes(32).toString('h
 process.env.NODE_ENV = 'test';
 
 const mockQuery = jest.fn();
-jest.mock('../db/pool', () => ({ query: mockQuery, promise: () => ({ query: mockQuery }) }));
+const mockGetConnection = jest.fn();
+jest.mock('../db/pool', () => ({
+  query: mockQuery,
+  promise: () => ({
+    query: mockQuery,
+    getConnection: (...args) => mockGetConnection(...args),
+  }),
+}));
 jest.mock('../utils/winstonLogger', () => ({
   system: { info: jest.fn(), error: jest.fn(), warn: jest.fn() },
   audit: { log: jest.fn() },
@@ -140,5 +147,107 @@ describe('DELETE /api/users/me (FR-05 restrictions)', () => {
     const res = await csrfRequest('delete', '/api/users/me', token, { password: 'x' });
     expect(res.status).toBe(403);
     expect(res.body.error).toMatch(/cannot delete their own account/i);
+  });
+
+  test('requires a password in the body', async () => {
+    configureDb([]);
+    const token = tokenFor({ id: 2, role: 'worker' });
+    const res = await csrfRequest('delete', '/api/users/me', token, {});
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/password is required/i);
+  });
+
+  test('deletes a worker account when the password is correct', async () => {
+    const hash = await argon2.hash('DeleteMePass99!');
+    const mockConnQuery = jest.fn().mockResolvedValue([{ affectedRows: 1 }]);
+    const conn = {
+      beginTransaction: jest.fn(),
+      commit: jest.fn(),
+      rollback: jest.fn(),
+      release: jest.fn(),
+      query: mockConnQuery,
+    };
+
+    mockQuery.mockImplementation((sql) => {
+      if (/FROM sessions/i.test(sql)) {
+        return Promise.resolve([[{ id: 1, last_activity: new Date() }]]);
+      }
+      if (/UPDATE sessions/i.test(sql)) return Promise.resolve([{ affectedRows: 1 }]);
+      if (/SELECT password_hash/i.test(sql)) return Promise.resolve([[{ password_hash: hash }]]);
+      return Promise.resolve([[]]);
+    });
+    mockGetConnection.mockResolvedValue(conn);
+
+    const token = tokenFor({ id: 2, role: 'worker' });
+    const res = await csrfRequest('delete', '/api/users/me', token, { password: 'DeleteMePass99!' });
+    expect(res.status).toBe(200);
+    expect(res.body.message).toMatch(/deleted/i);
+    expect(conn.commit).toHaveBeenCalled();
+    expect(conn.release).toHaveBeenCalled();
+  });
+});
+
+describe('PATCH /api/users/me/password (FR-04)', () => {
+  test('requires the current password', async () => {
+    configureDb([]);
+    const token = tokenFor({ id: 1, role: 'worker' });
+    const res = await csrfRequest('patch', '/api/users/me/password', token, { newPassword: 'NewValidPass99!' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/current password is required/i);
+  });
+
+  test('rejects an incorrect current password', async () => {
+    const hash = await argon2.hash('CorrectPass123!');
+    configureDb([{ password_hash: hash }]);
+    const token = tokenFor({ id: 1, role: 'worker' });
+    const res = await csrfRequest('patch', '/api/users/me/password', token, {
+      currentPassword: 'WrongPass123!',
+      newPassword: 'NewValidPass99!',
+    });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/incorrect current password/i);
+  });
+
+  test('rejects reusing the same password', async () => {
+    const hash = await argon2.hash('SamePass1234!');
+    configureDb([{ password_hash: hash }]);
+    const token = tokenFor({ id: 1, role: 'worker' });
+    const res = await csrfRequest('patch', '/api/users/me/password', token, {
+      currentPassword: 'SamePass1234!',
+      newPassword: 'SamePass1234!',
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/different from your current password/i);
+  });
+
+  test('changes the password when credentials are valid', async () => {
+    const hash = await argon2.hash('OldValidPass99!');
+    configureDb([{ password_hash: hash }]);
+    const token = tokenFor({ id: 1, role: 'worker' });
+    const res = await csrfRequest('patch', '/api/users/me/password', token, {
+      currentPassword: 'OldValidPass99!',
+      newPassword: 'NewValidPass99!',
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.message).toMatch(/changed successfully/i);
+  });
+});
+
+describe('GET /api/users/me/2fa', () => {
+  test('reports disabled when no confirmed secret exists', async () => {
+    configureDb([]);
+    const token = tokenFor({ id: 1, role: 'worker' });
+    const res = await request(app).get('/api/users/me/2fa').set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.enabled).toBe(false);
+  });
+
+  test('reports enabled with confirmation timestamp', async () => {
+    configureDb([{ confirmed_at: '2026-01-01T00:00:00.000Z' }]);
+    const token = tokenFor({ id: 1, role: 'worker' });
+    const res = await request(app).get('/api/users/me/2fa').set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.enabled).toBe(true);
+    expect(res.body.since).toBeTruthy();
   });
 });

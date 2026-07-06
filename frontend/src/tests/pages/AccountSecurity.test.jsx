@@ -6,10 +6,18 @@ const mockApiFetch = vi.fn();
 vi.mock('../../auth/api', () => ({
   apiFetch: (...args) => mockApiFetch(...args),
 }));
-// Both pages may read auth context for the admin/regular path.
+const mockLogout = vi.fn().mockResolvedValue(undefined);
+const mockNavigate = vi.fn();
 vi.mock('../../auth/useAuth', () => ({
-  useAuth: () => ({ user: { role: 'worker' }, isAuthenticated: true }),
+  useAuth: () => ({ user: { role: 'worker' }, isAuthenticated: true, logout: mockLogout }),
 }));
+vi.mock('react-router-dom', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+  };
+});
 
 import PasswordChange from '../../pages/PasswordChange';
 import DeleteAccount from '../../pages/DeleteAccount';
@@ -63,6 +71,58 @@ describe('PasswordChange (FR-04 re-authentication)', () => {
       expect(screen.getByText(/incorrect password/i)).toBeInTheDocument();
     });
   });
+
+  test('advances to the change step and submits a new password', async () => {
+    mockApiFetch
+      .mockResolvedValueOnce({ ok: true, json: async () => ({}) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ message: 'ok' }) });
+
+    renderPage();
+    fireEvent.change(document.querySelector('input[type="password"]'), {
+      target: { value: 'WorkerPass123!' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(/re-enter password/i)).toBeInTheDocument();
+    });
+
+    const inputs = document.querySelectorAll('input[type="password"]');
+    fireEvent.change(inputs[0], { target: { value: 'NewValidPass99!' } });
+    fireEvent.change(inputs[1], { target: { value: 'NewValidPass99!' } });
+    fireEvent.click(screen.getByRole('button', { name: /change password/i }));
+
+    await waitFor(() => {
+      expect(mockApiFetch).toHaveBeenCalledWith(
+        '/api/users/me/password',
+        expect.objectContaining({ method: 'PATCH' })
+      );
+      expect(screen.getByText(/password has been changed/i)).toBeInTheDocument();
+    });
+  });
+
+  test('shows a mismatch error before calling the API', async () => {
+    mockApiFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+    renderPage();
+    fireEvent.change(document.querySelector('input[type="password"]'), {
+      target: { value: 'WorkerPass123!' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(/re-enter password/i)).toBeInTheDocument();
+    });
+
+    const inputs = document.querySelectorAll('input[type="password"]');
+    fireEvent.change(inputs[0], { target: { value: 'NewValidPass99!' } });
+    fireEvent.change(inputs[1], { target: { value: 'DifferentPass99!' } });
+    fireEvent.click(screen.getByRole('button', { name: /change password/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/do not match/i)).toBeInTheDocument();
+    });
+    expect(mockApiFetch).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('DeleteAccount (re-authentication before destructive action)', () => {
@@ -91,5 +151,48 @@ describe('DeleteAccount (re-authentication before destructive action)', () => {
         expect.objectContaining({ method: 'POST' })
       );
     });
+  });
+
+  test('deletes the account after confirmation and logs out', async () => {
+    mockApiFetch
+      .mockResolvedValueOnce({ ok: true, json: async () => ({}) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ message: 'deleted' }) });
+
+    renderPage();
+    fireEvent.change(document.querySelector('input[type="password"]'), {
+      target: { value: 'WorkerPass123!' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/delete your account/i)).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /delete account/i }));
+
+    await waitFor(() => {
+      expect(mockApiFetch).toHaveBeenCalledWith(
+        '/api/users/me',
+        expect.objectContaining({ method: 'DELETE' })
+      );
+      expect(mockLogout).toHaveBeenCalled();
+      expect(mockNavigate).toHaveBeenCalledWith('/', { replace: true });
+    });
+  });
+
+  test('returns to reauth when cancel is clicked on the confirm step', async () => {
+    mockApiFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+    renderPage();
+    fireEvent.change(document.querySelector('input[type="password"]'), {
+      target: { value: 'WorkerPass123!' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /cancel/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
+    expect(screen.getByText(/confirm your password to continue/i)).toBeInTheDocument();
   });
 });

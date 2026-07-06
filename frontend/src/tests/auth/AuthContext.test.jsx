@@ -113,4 +113,27 @@ describe('AuthContext', () => {
     const logoutCall = mockApiFetch.mock.calls.find((c) => String(c[0]).includes('/api/auth/logout'));
     expect(logoutCall).toBeDefined();
   });
+
+  test('login with totpRequired throws without setting a generic error', async () => {
+    mockApiFetch.mockResolvedValue({
+      ok: false,
+      json: async () => ({ error: 'TOTP code required.', totpRequired: true }),
+    });
+    renderAuth();
+    await expect(async () => {
+      fireEvent.click(screen.getByText('login'));
+      await waitFor(() => mockApiFetch.mock.calls.length > 0);
+    }).not.toThrow();
+    await waitFor(() => {
+      expect(screen.getByTestId('authed').textContent).toBe('false');
+      expect(screen.getByTestId('error').textContent).toBe('');
+    });
+  });
+
+  test('restores user from an existing session token on mount', () => {
+    sessionStorage.setItem('orca.session', FAKE_JWT);
+    renderAuth();
+    expect(screen.getByTestId('authed').textContent).toBe('true');
+    expect(screen.getByTestId('role').textContent).toBe('worker');
+  });
 });

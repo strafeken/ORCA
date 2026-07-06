@@ -57,3 +57,66 @@ describe('confirmTotp activates 2FA', () => {
     expect(params).toContain(7);
   });
 });
+
+describe('verifyTotp', () => {
+  const speakeasy = require('speakeasy');
+  const { verifyTotp, disableTotp } = require('../utils/totp');
+
+  test('returns false when no secret is stored', async () => {
+    mockQuery.mockResolvedValue([[]]);
+    await expect(verifyTotp(1, '123456')).resolves.toBe(false);
+  });
+
+  test('returns false when decryption fails', async () => {
+    mockQuery.mockResolvedValue([[{ secret_encrypted: 'not-valid-ciphertext' }]]);
+    await expect(verifyTotp(1, '123456')).resolves.toBe(false);
+  });
+
+  test('returns true for a valid code against a stored secret', async () => {
+    const secret = speakeasy.generateSecret({ length: 20 });
+    const { encrypt } = (() => {
+      const crypto = require('crypto');
+      const ENC_KEY_HEX = process.env.TOTP_ENC_KEY;
+      const getKey = () => Buffer.from(ENC_KEY_HEX, 'hex');
+      return {
+        encrypt(plaintext) {
+          const iv = crypto.randomBytes(12);
+          const cipher = crypto.createCipheriv('aes-256-gcm', getKey(), iv);
+          const enc = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+          const tag = cipher.getAuthTag();
+          return `${iv.toString('hex')}:${tag.toString('hex')}:${enc.toString('hex')}`;
+        },
+      };
+    })();
+
+    const token = speakeasy.totp({ secret: secret.base32, encoding: 'base32' });
+    mockQuery.mockResolvedValue([[{ secret_encrypted: encrypt(secret.base32) }]]);
+    await expect(verifyTotp(9, token)).resolves.toBe(true);
+  });
+
+  test('returns false for an invalid code', async () => {
+    const secret = speakeasy.generateSecret({ length: 20 });
+    const crypto = require('crypto');
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv('aes-256-gcm', Buffer.from(process.env.TOTP_ENC_KEY, 'hex'), iv);
+    const enc = Buffer.concat([cipher.update(secret.base32, 'utf8'), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    const stored = `${iv.toString('hex')}:${tag.toString('hex')}:${enc.toString('hex')}`;
+
+    mockQuery.mockResolvedValue([[{ secret_encrypted: stored }]]);
+    await expect(verifyTotp(9, '000000')).resolves.toBe(false);
+  });
+});
+
+describe('disableTotp', () => {
+  const { disableTotp } = require('../utils/totp');
+
+  test('deletes the stored secret for the user', async () => {
+    mockQuery.mockResolvedValue([{ affectedRows: 1 }]);
+    await disableTotp(3);
+
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(sql).toMatch(/DELETE FROM totp_secrets/i);
+    expect(params).toEqual([3]);
+  });
+});

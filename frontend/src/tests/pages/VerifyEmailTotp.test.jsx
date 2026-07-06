@@ -1,5 +1,5 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 const mockApiFetch = vi.fn();
@@ -88,6 +88,51 @@ describe('TotpSetup (SR-21)', () => {
     startBtn.click();
     await waitFor(() => {
       expect(mockApiFetch).toHaveBeenCalledWith('/api/auth/totp/setup', { method: 'POST' });
+    });
+  });
+
+  test('shows the QR code and submits the enable request', async () => {
+    mockApiFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ qr: 'data:image/png;base64,xxx' }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ message: 'enabled' }),
+      });
+
+    renderTotp();
+    fireEvent.click(screen.getByRole('button', { name: /set up 2fa/i }));
+
+    await waitFor(() => {
+      expect(screen.getByAltText(/totp qr code/i)).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText('123456'), { target: { value: '654321' } });
+    fireEvent.click(screen.getByRole('button', { name: /enable 2fa/i }));
+
+    await waitFor(() => {
+      expect(mockApiFetch).toHaveBeenCalledWith(
+        '/api/auth/totp/enable',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ totp: '654321' }),
+        })
+      );
+      expect(screen.getByText(/now enabled/i)).toBeInTheDocument();
+    });
+  });
+
+  test('shows an error when setup fails', async () => {
+    mockApiFetch.mockResolvedValue({
+      ok: false,
+      json: async () => ({ error: 'Setup unavailable.' }),
+    });
+    renderTotp();
+    fireEvent.click(screen.getByRole('button', { name: /set up 2fa/i }));
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent(/setup unavailable/i);
     });
   });
 });

@@ -56,3 +56,21 @@ describe('password hashing (Argon2id)', () => {
     await expect(verifyPassword('', 'anything')).resolves.toBe(false);
   });
 });
+
+describe('passwordPolicyError', () => {
+  const { passwordPolicyError, MIN_PASSWORD_LENGTH, MAX_PASSWORD_LENGTH } = require('../utils/password');
+
+  test('returns null for a password within bounds', () => {
+    expect(passwordPolicyError('a'.repeat(MIN_PASSWORD_LENGTH))).toBeNull();
+    expect(passwordPolicyError('a'.repeat(MAX_PASSWORD_LENGTH))).toBeNull();
+  });
+
+  test('rejects non-string and short passwords', () => {
+    expect(passwordPolicyError(undefined)).toMatch(/8 characters/i);
+    expect(passwordPolicyError('short')).toMatch(/8 characters/i);
+  });
+
+  test('rejects passwords over the maximum length', () => {
+    expect(passwordPolicyError('a'.repeat(MAX_PASSWORD_LENGTH + 1))).toMatch(/too long/i);
+  });
+});

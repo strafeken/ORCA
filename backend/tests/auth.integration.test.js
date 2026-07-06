@@ -59,6 +59,20 @@ async function csrfPost(pathUrl, body) {
     .send(body);
 }
 
+async function csrfPostWithSession(pathUrl, body, sessionHeaders = {}, bearer) {
+  const tokenRes = await request(app).get('/api/csrf-token').set(sessionHeaders);
+  const csrf = tokenRes.body.csrfToken;
+  const cookieHeader = (tokenRes.headers['set-cookie'] || []).map((c) => c.split(';')[0]).join('; ');
+  let req = request(app)
+    .post(pathUrl)
+    .set('Cookie', cookieHeader)
+    .set('x-csrf-token', csrf)
+    .set(sessionHeaders)
+    .send(body);
+  if (bearer) req = req.set('Authorization', `Bearer ${bearer}`);
+  return req;
+}
+
 // Helper: make the mocked pool answer SELECTs with a given user row and
 // succeed for writes. Table-aware: the users lookup returns the user, but
 // totp_secrets / sessions lookups return empty so the login path doesn't think
@@ -176,5 +190,84 @@ describe('POST /api/auth/admin/login (integration)', () => {
     });
     const res = await csrfPost('/api/auth/admin/login', { email: 'john@orca.com', password: 'WorkerPass123!' });
     expect(res.status).toBeGreaterThanOrEqual(400);
+  });
+});
+
+describe('GET /api/auth/session', () => {
+  afterEach(() => jest.clearAllMocks());
+
+  test('returns the authenticated user from a valid token', async () => {
+    mockQuery.mockImplementation((sql) => {
+      if (/FROM sessions/i.test(sql)) {
+        return Promise.resolve([[{ id: 1, last_activity: new Date(), revoked: 0 }]]);
+      }
+      if (/UPDATE sessions/i.test(sql)) return Promise.resolve([{ affectedRows: 1 }]);
+      return Promise.resolve([[]]);
+    });
+
+    const jwt = require('jsonwebtoken');
+    const token = jwt.sign({ id: 1, name: 'John', role: 'worker' }, process.env.JWT_SECRET, { expiresIn: '15m' });
+    const res = await request(app).get('/api/auth/session').set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.user.role).toBe('worker');
+  });
+});
+
+describe('POST /api/auth/logout', () => {
+  afterEach(() => jest.clearAllMocks());
+
+  test('always succeeds and returns a logged-out message', async () => {
+    mockQuery.mockResolvedValue([{ affectedRows: 1 }]);
+    const jwt = require('jsonwebtoken');
+    const token = jwt.sign({ id: 1, role: 'worker' }, process.env.JWT_SECRET, { expiresIn: '15m' });
+    const tokenRes = await request(app).get('/api/csrf-token');
+    const csrf = tokenRes.body.csrfToken;
+    const cookieHeader = (tokenRes.headers['set-cookie'] || []).map((c) => c.split(';')[0]).join('; ');
+    const res = await request(app)
+      .post('/api/auth/logout')
+      .set('Cookie', cookieHeader)
+      .set('x-csrf-token', csrf)
+      .set('Authorization', `Bearer ${token}`)
+      .send({});
+    expect(res.status).toBe(200);
+    expect(res.body.message).toMatch(/logged out/i);
+  });
+});
+
+describe('POST /api/auth/refresh', () => {
+  afterEach(() => jest.clearAllMocks());
+
+  test('rejects a request with no refresh token', async () => {
+    const res = await csrfPost('/api/auth/refresh', {});
+    expect(res.status).toBe(401);
+    expect(res.body.error).toMatch(/missing refresh token/i);
+  });
+
+  test('issues a new access token for a valid refresh session', async () => {
+    const refreshToken = 'refresh-token-value';
+    mockQuery.mockImplementation((sql) => {
+      if (/FROM sessions/i.test(sql)) {
+        return Promise.resolve([[
+          {
+            id: 9,
+            uid: 1,
+            name: 'John',
+            role: 'worker',
+            last_activity: new Date(),
+          },
+        ]]);
+      }
+      if (/UPDATE sessions SET token_hash/i.test(sql)) return Promise.resolve([{ affectedRows: 1 }]);
+      return Promise.resolve([[]]);
+    });
+
+    const res = await csrfPostWithSession(
+      '/api/auth/refresh',
+      { refreshToken },
+      { 'x-refresh-token': refreshToken }
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.token).toBeDefined();
+    expect(res.body.user.role).toBe('worker');
   });
 });

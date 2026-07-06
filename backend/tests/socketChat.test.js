@@ -6,15 +6,23 @@ jest.mock('../sockets/guards', () => ({
   authorizeConversationEvent: (...a) => mockAuthorize(...a),
 }));
 const mockGetHistory = jest.fn().mockResolvedValue({ messages: [], hasMore: false });
+const mockGetPage = jest.fn().mockResolvedValue({ messages: [], hasMore: false });
 jest.mock('../utils/conversationRepository', () => ({
   getConversationHistory: (...a) => mockGetHistory(...a),
-  getConversationPage: jest.fn().mockResolvedValue({ messages: [], hasMore: false }),
+  getConversationPage: (...a) => mockGetPage(...a),
 }));
 jest.mock('../middleware/socketRateLimiter', () => ({
-  createSocketLimiter: () => () => true, // never rate-limited in these tests
+  createSocketLimiter: () => () => true,
 }));
-jest.mock('../db/pool', () => ({ query: jest.fn(), promise: () => ({ query: jest.fn() }) }));
-jest.mock('../utils/sanitize', () => ({ sanitizeText: (s) => s }));
+const mockPoolQuery = jest.fn();
+jest.mock('../db/pool', () => ({
+  query: mockPoolQuery,
+  promise: () => ({ query: mockPoolQuery }),
+}));
+jest.mock('../utils/messageCipher', () => ({
+  encrypt: (text) => `enc:${text}`,
+}));
+jest.mock('../utils/sanitize', () => ({ sanitizeText: (s) => (typeof s === 'string' ? s.trim() : s) }));
 jest.mock('../utils/winstonLogger', () => ({
   system: { info: jest.fn(), error: jest.fn() },
 }));
@@ -124,5 +132,67 @@ describe('registerChatHandlers', () => {
     await handlers.get('chat:send')({ conversationId: 5, content: '    ' });
     // No broadcast for an empty message.
     expect(io.to).not.toHaveBeenCalled();
+  });
+
+  test('chat:send broadcasts a sanitized message when authorized', async () => {
+    const emit = jest.fn();
+    const io = { to: jest.fn(() => ({ emit })) };
+    const { socket, handlers } = makeSocket();
+    socket.user.name = 'Worker';
+    socket.rooms.add('chat:5');
+    registerChatHandlers(io, socket);
+    mockAuthorize.mockResolvedValue(5);
+    mockPoolQuery.mockResolvedValueOnce([{ insertId: 99 }]).mockResolvedValueOnce([{ affectedRows: 1 }]);
+
+    await handlers.get('chat:send')({ conversationId: 5, content: '  hello world  ' });
+
+    expect(mockPoolQuery).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO messages'),
+      [5, 10, 'enc:hello world']
+    );
+    expect(emit).toHaveBeenCalledWith('chat:message', expect.objectContaining({
+      id: 99,
+      content: 'hello world',
+      sender_id: 10,
+    }));
+  });
+
+  test('chat:load-more rejects access when authorization fails', async () => {
+    const { socket, handlers } = makeSocket();
+    registerChatHandlers({}, socket);
+    mockAuthorize.mockResolvedValue(null);
+
+    await handlers.get('chat:load-more')({ conversationId: 5, before: '2026-01-01T00:00:00.000Z' });
+
+    expect(socket.emit).toHaveBeenCalledWith('chat:error', expect.objectContaining({
+      message: expect.stringMatching(/access denied/i),
+    }));
+  });
+
+  test('chat:load-more returns older messages when joined and authorized', async () => {
+    const { socket, handlers } = makeSocket();
+    socket.rooms.add('chat:5');
+    registerChatHandlers({}, socket);
+    mockAuthorize.mockResolvedValue(5);
+    mockGetPage.mockResolvedValueOnce({ messages: [{ id: 1 }], hasMore: true });
+
+    await handlers.get('chat:load-more')({ conversationId: 5, before: '2026-01-01T00:00:00.000Z' });
+
+    expect(socket.emit).toHaveBeenCalledWith('chat:older-messages', {
+      messages: [{ id: 1 }],
+      hasMore: true,
+    });
+  });
+
+  test('chat:join emits an error when authorization throws', async () => {
+    const { socket, handlers } = makeSocket();
+    registerChatHandlers({}, socket);
+    mockAuthorize.mockRejectedValue(new Error('db down'));
+
+    await handlers.get('chat:join')({ conversationId: 5 });
+
+    expect(socket.emit).toHaveBeenCalledWith('chat:error', expect.objectContaining({
+      message: expect.stringMatching(/failed to join/i),
+    }));
   });
 });
