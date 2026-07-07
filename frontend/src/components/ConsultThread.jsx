@@ -5,8 +5,8 @@ import { apiFetch } from "../auth/api";
 import { useAuthedBlobUrl } from "../hooks/useAuthedBlobURL";
 import AnnotationCanvas from "./AnnotationCanvas";
 import { useCallGuard } from "./callGuard";
+import CallHeaderAction from "./CallHeaderAction";
 import {
-  CallHeaderAction,
   handlePeerConnectionStateChange,
   isActiveCallState,
   normPoint,
