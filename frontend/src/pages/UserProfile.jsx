@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../auth/api";
-import { Link, useSearchParams } from "react-router-dom"; 
-import { useLocation } from "react-router-dom"; 
+import { Link, useSearchParams, useLocation } from "react-router-dom"; 
 import { securityPaths } from "../auth/securityPaths";
 
 const BASE_TABS = [
