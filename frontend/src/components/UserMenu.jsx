@@ -18,7 +18,7 @@ export default function UserMenu({ user, onLogout }) {
   // no navigation event to prevent).
   function guardLeave(e) {
     if (callActiveRef.current) {
-      if (!window.confirm(CALL_LEAVE_MESSAGE)) {
+      if (!globalThis.confirm(CALL_LEAVE_MESSAGE)) {
         e?.preventDefault?.();
         return false;
       }

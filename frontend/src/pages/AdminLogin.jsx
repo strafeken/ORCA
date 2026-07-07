@@ -60,7 +60,7 @@ export default function AdminLogin() {
       // Rebind the CSRF token to the new refresh-token identity (forced so it
       // can't reuse an in-flight anonymous-bound fetch).
       await fetchCsrfToken({ force: true });
-      window.location.replace("/adm/managementDashboard");
+      globalThis.location.replace("/adm/managementDashboard");
     } catch {
       setError("Unable to connect to the server. Please try again.");
     } finally {

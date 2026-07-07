@@ -40,7 +40,7 @@ export default function ConsultExpert() {
 
   function selectConversation(id) {
     if (callActiveRef.current && id !== selectedId) {
-      const ok = window.confirm(
+      const ok = globalThis.confirm(
         "You're in a video call. Leaving this conversation will end the call. Continue?"
       );
       if (!ok) return;
@@ -171,7 +171,7 @@ export default function ConsultExpert() {
               onClick={(e) => {
                 // Same guard as the navbar/conversation-switch: this in-page
                 // link leaves /consult and would drop an active call.
-                if (callActiveRef.current && !window.confirm(CALL_LEAVE_MESSAGE)) {
+                if (callActiveRef.current && !globalThis.confirm(CALL_LEAVE_MESSAGE)) {
                   e.preventDefault();
                 }
               }}

@@ -197,16 +197,16 @@ export async function apiFetch(url, options = {}) {
 
     // Redirect to the correct login page based on where the user is now.
     // Admin panel pages live under /adm/; everyone else uses /login.
-    const isAdminPath = window.location.pathname.startsWith("/adm/");
+    const isAdminPath = globalThis.location.pathname.startsWith("/adm/");
     const loginPath = isAdminPath ? "/adm/administratorLogin" : "/login";
 
     // Only redirect if we aren't already on a login page (avoids redirect
     // loops if the login page itself makes an unauthenticated API call).
-    const alreadyOnLogin = window.location.pathname === "/adm/administratorLogin" || window.location.pathname === "/login";
+    const alreadyOnLogin = globalThis.location.pathname === "/adm/administratorLogin" || globalThis.location.pathname === "/login";
 
     if (!alreadyOnLogin) {
       await fetchCsrfToken({ force: true }); // fresh anonymous-bound token before redirecting
-      window.location.replace(loginPath);
+      globalThis.location.replace(loginPath);
     }
   }
 
