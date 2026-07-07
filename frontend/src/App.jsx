@@ -62,7 +62,7 @@ import AdminLogs from "./pages/AdminLogs";
  */
 function ChatLegacyRedirect() {
   const { conversationId } = useParams();
-  const id = parseInt(conversationId, 10);
+  const id = Number.parseInt(conversationId, 10);
   return (
     <Navigate
       to={Number.isInteger(id) ? `/consult?c=${id}` : "/consult"}

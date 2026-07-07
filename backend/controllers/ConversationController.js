@@ -28,7 +28,7 @@ class ConversationController {
   }
 
   async create(req, res) {
-    const expertId = parseInt(req.body.expertId, 10);
+    const expertId = Number.parseInt(req.body.expertId, 10);
     if (!Number.isInteger(expertId) || expertId < 1) {
       return res.status(400).json({ error: 'A valid expert ID is required.' });
     }
@@ -61,7 +61,7 @@ class ConversationController {
   }
 
   async get(req, res) {
-    const conversationId = parseInt(req.params.id, 10);
+    const conversationId = Number.parseInt(req.params.id, 10);
     if (!Number.isInteger(conversationId) || conversationId < 1) {
       return res.status(400).json({ error: 'Invalid conversation ID.' });
     }

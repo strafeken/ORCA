@@ -49,7 +49,7 @@ const UPDATABLE_FIELDS = ['name', 'contact_number', 'bio'];
 router.patch('/me', authMiddleware, async (req, res) => {
   const updates = {};
   for (const field of UPDATABLE_FIELDS) {
-    if (Object.prototype.hasOwnProperty.call(req.body, field)) {
+    if (Object.hasOwn(req.body, field)) {
       updates[field] = req.body[field];
     }
   }

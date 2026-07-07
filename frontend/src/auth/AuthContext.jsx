@@ -54,7 +54,7 @@ const ACTIVITY_EVENTS = ["mousedown", "mousemove", "keydown", "wheel", "touchsta
 function decodeJwt(token) {
   try {
     const payload = token.split(".")[1];
-    const json = atob(payload.replace(/-/g, "+").replace(/_/g, "/"));
+    const json = atob(payload.replaceAll("-", "+").replaceAll("_", "/"));
     return JSON.parse(json);
   } catch {
     return null;
@@ -179,9 +179,9 @@ export function AuthProvider({ children }) {
     const markActive = () => {
       lastActivityRef.current = Date.now();
     };
-    ACTIVITY_EVENTS.forEach((evt) => window.addEventListener(evt, markActive, { passive: true }));
+    ACTIVITY_EVENTS.forEach((evt) => globalThis.addEventListener(evt, markActive, { passive: true }));
     return () => {
-      ACTIVITY_EVENTS.forEach((evt) => window.removeEventListener(evt, markActive));
+      ACTIVITY_EVENTS.forEach((evt) => globalThis.removeEventListener(evt, markActive));
     };
   }, []);
 
@@ -262,7 +262,7 @@ export function AuthProvider({ children }) {
       if (document.visibilityState === "visible") checkSession();
     };
     document.addEventListener("visibilitychange", onVisibilityChange);
-    window.addEventListener("focus", checkSession);
+    globalThis.addEventListener("focus", checkSession);
 
     const idleAndRefreshId = setInterval(async () => {
       if (cancelled) return;
@@ -304,7 +304,7 @@ export function AuthProvider({ children }) {
       clearInterval(heartbeatId);
       clearInterval(idleAndRefreshId);
       document.removeEventListener("visibilitychange", onVisibilityChange);
-      window.removeEventListener("focus", checkSession);
+      globalThis.removeEventListener("focus", checkSession);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- logout is stable (useCallback([persist])) and persist is stable; re-running on token change is intentional.
   }, [token]);

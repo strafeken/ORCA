@@ -6,6 +6,7 @@ const { httpLogger } = require('./utils/logger');
 const { system } = require('./utils/winstonLogger');
 
 const app = express();
+app.disable('x-powered-by');
 app.set('trust proxy', 1);
 
 const { generateCsrfToken, doubleCsrfProtection } = doubleCsrf({

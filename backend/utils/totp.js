@@ -1,4 +1,4 @@
-const crypto = require('crypto');
+const crypto = require('node:crypto');
 const speakeasy = require('speakeasy');
 const qrcode = require('qrcode');
 const pool = require('../db/pool').promise();
@@ -22,7 +22,7 @@ const pool = require('../db/pool').promise();
  * it back to verify codes — so encryption, not hashing, is the right tool.
  *
  * .env: TOTP_ENC_KEY = 64 hex chars (32 bytes).
- *   generate: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+ *   generate: node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
  */
 
 const ENC_KEY_HEX = process.env.TOTP_ENC_KEY;

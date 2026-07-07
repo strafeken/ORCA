@@ -1,4 +1,4 @@
-const crypto = require('crypto');
+const crypto = require('node:crypto');
 
 /**
  * messageCipher — application-layer encryption of chat message content at rest
@@ -30,7 +30,7 @@ const crypto = require('crypto');
  * reads correctly until scripts/encryptMessages.js backfills the old rows.
  *
  * .env: MESSAGE_ENC_KEY = 64 hex chars (32 bytes).
- *   generate: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+ *   generate: node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
  */
 
 const SCHEME = 'v1';

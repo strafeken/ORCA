@@ -48,7 +48,7 @@ async function isSessionLive(sessionId) {
  */
 function parseConversationId(raw) {
   if (typeof raw === 'number' && Number.isInteger(raw) && raw > 0) return raw;
-  if (typeof raw === 'string' && /^\d{1,10}$/.test(raw)) return parseInt(raw, 10);
+  if (typeof raw === 'string' && /^\d{1,10}$/.test(raw)) return Number.parseInt(raw, 10);
   return null;
 }
 

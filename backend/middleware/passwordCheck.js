@@ -9,9 +9,9 @@
  * the password were not found in breach corpora (a warning is logged). This
  * keeps registration/password-change available when the external service is down.
  */
-const fs = require('fs');
-const path = require('path');
-const crypto = require('crypto');
+const fs = require('node:fs');
+const path = require('node:path');
+const crypto = require('node:crypto');
 const { system } = require('../utils/winstonLogger');
 const { MIN_PASSWORD_LENGTH, MAX_PASSWORD_LENGTH } = require('../constants/passwordPolicy');
 

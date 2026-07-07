@@ -44,7 +44,7 @@ export default function AnnotationCanvas({ fileId, downloadUrl, existingVersions
         const url = URL.createObjectURL(blob);
         objectUrlRef.current = url;
 
-        const img = new window.Image();
+        const img = new globalThis.Image();
         img.onload = () => {
           if (cancelled) return;
           setImage(img);

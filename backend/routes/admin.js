@@ -1,5 +1,5 @@
-const fs = require('fs');
-const path = require('path');
+const fs = require('node:fs');
+const path = require('node:path');
 const express = require('express');
 const router = express.Router();
 const pool = require('../db/pool').promise();
@@ -207,7 +207,7 @@ router.get('/users', async (req, res) => {
  * audit trail of prior conversations is preserved. (FR-05, SR-27)
  */
 router.delete('/users/:id', async (req, res) => {
-  const targetId = parseInt(req.params.id, 10);
+  const targetId = Number.parseInt(req.params.id, 10);
   if (!Number.isInteger(targetId) || targetId < 1) {
     return res.status(400).json({ error: 'Invalid user ID.' });
   }
@@ -286,7 +286,7 @@ router.delete('/users/:id', async (req, res) => {
  * Body: { approved: boolean }
  */
 router.patch('/users/:id/approve', async (req, res) => {
-  const targetId = parseInt(req.params.id, 10);
+  const targetId = Number.parseInt(req.params.id, 10);
   if (!Number.isInteger(targetId) || targetId < 1) {
     return res.status(400).json({ error: 'Invalid user ID.' });
   }
@@ -345,7 +345,7 @@ router.patch('/users/:id/approve', async (req, res) => {
  * admin — they do not expire on their own. (SR-22)
  */
 router.patch('/users/:id/unlock', async (req, res) => {
-  const targetId = parseInt(req.params.id, 10);
+  const targetId = Number.parseInt(req.params.id, 10);
   if (!Number.isInteger(targetId) || targetId < 1) {
     return res.status(400).json({ error: 'Invalid user ID.' });
   }
@@ -435,7 +435,7 @@ router.get('/sessions', async (req, res) => {
  * (SR-23: Administrators shall be able to terminate active sessions.)
  */
 router.delete('/sessions/:id', async (req, res) => {
-  const sessionId = parseInt(req.params.id, 10);
+  const sessionId = Number.parseInt(req.params.id, 10);
   if (!Number.isInteger(sessionId) || sessionId < 1) {
     return res.status(400).json({ error: 'Invalid session ID.' });
   }
@@ -508,7 +508,7 @@ router.get('/conversations', async (req, res) => {
  * the audit trail. (FR-12, SR-03, SR-29)
  */
 router.get('/conversations/:id/messages', async (req, res) => {
-  const convId = parseInt(req.params.id, 10);
+  const convId = Number.parseInt(req.params.id, 10);
   if (!Number.isInteger(convId) || convId < 1) {
     return res.status(400).json({ error: 'Invalid conversation ID.' });
   }
@@ -592,8 +592,8 @@ router.get('/conversations/:id/messages', async (req, res) => {
  * and every download is audited (SR-29).
  */
 async function streamConversationMedia(req, res, { sql, idParam, action, resourceType, fallbackType }) {
-  const convId = parseInt(req.params.id, 10);
-  const mediaId = parseInt(req.params[idParam], 10);
+  const convId = Number.parseInt(req.params.id, 10);
+  const mediaId = Number.parseInt(req.params[idParam], 10);
   if (!Number.isInteger(convId) || convId < 1 || !Number.isInteger(mediaId) || mediaId < 1) {
     return res.status(400).json({ error: 'Invalid identifier.' });
   }
@@ -665,7 +665,7 @@ router.get('/conversations/:id/voice/:voiceId', (req, res) =>
  * deletion fails partway through. (FR-12, SR-11, SR-27, SR-29, SR-30)
  */
 router.delete('/conversations/:id', async (req, res) => {
-  const convId = parseInt(req.params.id, 10);
+  const convId = Number.parseInt(req.params.id, 10);
   if (!Number.isInteger(convId) || convId < 1) {
     return res.status(400).json({ error: 'Invalid conversation ID.' });
   }

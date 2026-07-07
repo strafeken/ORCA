@@ -541,8 +541,8 @@ export default function ConsultThread({ conversationId, counterpart, onCallActiv
 
   // Annotation canvases size themselves at draw time — redraw when the layout changes
   useEffect(() => {
-    window.addEventListener("resize", redrawAnnotations);
-    return () => window.removeEventListener("resize", redrawAnnotations);
+    globalThis.addEventListener("resize", redrawAnnotations);
+    return () => globalThis.removeEventListener("resize", redrawAnnotations);
   }, [redrawAnnotations]);
 
   // #4 — warn before the tab is closed/refreshed while a call is active.
@@ -552,8 +552,8 @@ export default function ConsultThread({ conversationId, counterpart, onCallActiv
       e.preventDefault();
       e.returnValue = ""; // required for the native "Leave site?" prompt
     };
-    window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
+    globalThis.addEventListener("beforeunload", warn);
+    return () => globalThis.removeEventListener("beforeunload", warn);
   }, [callStatus]);
 
   // #4 — publish "call active" both to the parent (ConsultExpert, which guards

@@ -45,13 +45,13 @@ const { verifyToken } = require('../utils/tokens');
 
 function keyGenerator(req) {
   const authHeader = req.headers['authorization'];
-  if (authHeader && authHeader.startsWith('Bearer ')) {
+  if (authHeader?.startsWith('Bearer ')) {
     const token = authHeader.slice(7);
     try {
       // Verified, not just decoded — a tampered/forged token must not be
       // able to pick an arbitrary bucket to write into.
       const decoded = verifyToken(token);
-      if (decoded && decoded.id != null) {
+      if (decoded?.id != null) {
         return `user:${decoded.id}`;
       }
     } catch {
