@@ -89,6 +89,7 @@ export default function ConsultThread({ conversationId, counterpart, onCallActiv
   const acceptedRef = useRef(false);    // callee accepted the incoming call
   const ringTimeoutRef = useRef(null);  // outgoing-call no-answer timer
   const callStatusRef = useRef("idle"); // mirror of callStatus for socket handlers
+  const socketCancelledRef = useRef(false);
   const peerNameRef = useRef(counterpart?.name || null); // for call-setup messages
 
   const myColor = STROKE_COLORS[user?.role] || STROKE_COLORS.worker;
@@ -367,17 +368,103 @@ export default function ConsultThread({ conversationId, counterpart, onCallActiv
     await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate));
   }, []);
 
+  const appendSocketMessage = useCallback((msg) => {
+    setMessages((prev) => [...prev, msg]);
+  }, []);
+
+  const handleSocketAnnotation = useCallback((annotation) => {
+    setAnnotationCounts((prev) => ({
+      ...prev,
+      [annotation.file_id]: Math.max(prev[annotation.file_id] || 0, annotation.version),
+    }));
+  }, []);
+
+  const handleIncomingRing = useCallback((name) => {
+    callRoleRef.current = "callee";
+    acceptedRef.current = false;
+    if (name) setRemoteUserName(name);
+    setCallNotice(null);
+    setCallStatus("incoming");
+  }, []);
+
+  const handleCallerOfferFailure = useCallback(() => {
+    setThreadError("Failed to start the call.");
+    endCallMedia();
+    setShowVideo(false);
+  }, [endCallMedia]);
+
+  const handleCallerAccepted = useCallback(() => {
+    clearRingTimeout();
+    beginCallerOffer().catch(handleCallerOfferFailure);
+  }, [clearRingTimeout, beginCallerOffer, handleCallerOfferFailure]);
+
+  const handleCallerDeclined = useCallback(() => {
+    clearRingTimeout();
+    endCallMedia();
+    setShowVideo(false);
+    setCallNotice(`${peerNameRef.current || "They"} declined the call.`);
+  }, [clearRingTimeout, endCallMedia]);
+
+  const handleCallerCancelled = useCallback(() => {
+    callRoleRef.current = null;
+    acceptedRef.current = false;
+    setCallStatus("idle");
+    setShowVideo(false);
+    setCallNotice(`Missed call from ${peerNameRef.current || "them"}.`);
+  }, []);
+
+  const handleSocketOfferFailure = useCallback(() => {
+    setThreadError("Failed to accept incoming call.");
+  }, []);
+
+  const handleSocketOffer = useCallback((offer) => {
+    handleOffer(offer).catch(handleSocketOfferFailure);
+  }, [handleOffer, handleSocketOfferFailure]);
+
+  const handleSocketAnswer = useCallback((answer) => {
+    handleAnswer(answer).catch(() => {});
+  }, [handleAnswer]);
+
+  const handleSocketCandidate = useCallback((candidate) => {
+    handleRemoteCandidate(candidate).catch(() => {});
+  }, [handleRemoteCandidate]);
+
+  const handleSocketRemoteAnnotation = useCallback((stroke) => {
+    peerStrokesRef.current.push(stroke);
+    redrawAnnotations();
+  }, [redrawAnnotations]);
+
+  const handleSocketCallEnded = useCallback((message) => {
+    endCallMedia();
+    setShowVideo(false);
+    setCallNotice(message);
+  }, [endCallMedia]);
+
+  const handleSocketUserLeft = useCallback((leftUserId) => {
+    endCallMedia();
+    setShowVideo(false);
+    if (leftUserId && leftUserId === user?.id) return;
+    setCounterpartOnline(false);
+    setRemoteUserName(null);
+  }, [endCallMedia, user?.id]);
+
+  const handleSocketCallError = useCallback((message) => {
+    endCallMedia();
+    setShowVideo(false);
+    setCallNotice(message);
+  }, [endCallMedia]);
+
   useEffect(() => {
     if (!token || !convId) return;
 
     let socket;
-    let cancelled = false;
+    socketCancelledRef.current = false;
 
     const init = async () => {
       try {
         const turnRes = await apiFetch("/api/voip/turn-credentials");
         const servers = turnRes.ok ? await turnRes.json() : [];
-        if (!cancelled) iceServersRef.current = servers;
+        if (!socketCancelledRef.current) iceServersRef.current = servers;
       } catch {
         iceServersRef.current = [];
       }
@@ -387,16 +474,11 @@ export default function ConsultThread({ conversationId, counterpart, onCallActiv
       registerConsultThreadSocketHandlers(socket, {
         convId,
         userId: user?.id,
-        isCancelled: () => cancelled,
+        isCancelled: () => socketCancelledRef.current,
         setStatus,
         setMessages,
-        appendMessage: (msg) => setMessages((prev) => [...prev, msg]),
-        onAnnotation: (annotation) => {
-          setAnnotationCounts((prev) => ({
-            ...prev,
-            [annotation.file_id]: Math.max(prev[annotation.file_id] || 0, annotation.version),
-          }));
-        },
+        appendMessage: appendSocketMessage,
+        onAnnotation: handleSocketAnnotation,
         setThreadError,
         setCounterpartOnline,
         setRemoteUserName,
@@ -404,65 +486,18 @@ export default function ConsultThread({ conversationId, counterpart, onCallActiv
         getCallStatus: () => callStatusRef.current,
         getCallRole: () => callRoleRef.current,
         isAccepted: () => acceptedRef.current,
-        onIncomingRing: (name) => {
-          callRoleRef.current = "callee";
-          acceptedRef.current = false;
-          if (name) setRemoteUserName(name);
-          setCallNotice(null);
-          setCallStatus("incoming");
-        },
-        onCallerAccepted: () => {
-          clearRingTimeout();
-          beginCallerOffer().catch(() => {
-            setThreadError("Failed to start the call.");
-            endCallMedia();
-            setShowVideo(false);
-          });
-        },
-        onCallerDeclined: () => {
-          clearRingTimeout();
-          endCallMedia();
-          setShowVideo(false);
-          setCallNotice(`${peerNameRef.current || "They"} declined the call.`);
-        },
-        onCallerCancelled: () => {
-          callRoleRef.current = null;
-          acceptedRef.current = false;
-          setCallStatus("idle");
-          setShowVideo(false);
-          setCallNotice(`Missed call from ${peerNameRef.current || "them"}.`);
-        },
-        onRemoteOffer: (offer) => {
-          handleOffer(offer).catch(() => setThreadError("Failed to accept incoming call."));
-        },
-        onRemoteAnswer: (answer) => {
-          handleAnswer(answer).catch(() => {});
-        },
-        onRemoteCandidate: (candidate) => {
-          handleRemoteCandidate(candidate).catch(() => {});
-        },
-        onRemoteAnnotation: (stroke) => {
-          peerStrokesRef.current.push(stroke);
-          redrawAnnotations();
-        },
+        onIncomingRing: handleIncomingRing,
+        onCallerAccepted: handleCallerAccepted,
+        onCallerDeclined: handleCallerDeclined,
+        onCallerCancelled: handleCallerCancelled,
+        onRemoteOffer: handleSocketOffer,
+        onRemoteAnswer: handleSocketAnswer,
+        onRemoteCandidate: handleSocketCandidate,
+        onRemoteAnnotation: handleSocketRemoteAnnotation,
         onRemoteAnnotationClear: clearPeerStrokes,
-        onCallEnded: (message) => {
-          endCallMedia();
-          setShowVideo(false);
-          setCallNotice(message);
-        },
-        onUserLeft: (leftUserId) => {
-          endCallMedia();
-          setShowVideo(false);
-          if (leftUserId && leftUserId === user?.id) return;
-          setCounterpartOnline(false);
-          setRemoteUserName(null);
-        },
-        onCallError: (message) => {
-          endCallMedia();
-          setShowVideo(false);
-          setCallNotice(message);
-        },
+        onCallEnded: handleSocketCallEnded,
+        onUserLeft: handleSocketUserLeft,
+        onCallError: handleSocketCallError,
       });
 
       socketRef.current = socket;
@@ -471,14 +506,34 @@ export default function ConsultThread({ conversationId, counterpart, onCallActiv
     init();
 
     return () => {
-      cancelled = true;
+      socketCancelledRef.current = true;
       endCallMedia();
       socket?.emit("call:leave", { conversationId: convId });
       socket?.emit("chat:leave", { conversationId: convId });
       socket?.disconnect();
       socketRef.current = null;
     };
-  }, [token, convId, user?.id, handleOffer, handleAnswer, handleRemoteCandidate, beginCallerOffer, endCallMedia, redrawAnnotations, clearPeerStrokes, clearRingTimeout]);
+  }, [
+    token,
+    convId,
+    user?.id,
+    handleOffer,
+    endCallMedia,
+    clearPeerStrokes,
+    appendSocketMessage,
+    handleSocketAnnotation,
+    handleIncomingRing,
+    handleCallerAccepted,
+    handleCallerDeclined,
+    handleCallerCancelled,
+    handleSocketOffer,
+    handleSocketAnswer,
+    handleSocketCandidate,
+    handleSocketRemoteAnnotation,
+    handleSocketCallEnded,
+    handleSocketUserLeft,
+    handleSocketCallError,
+  ]);
 
   // Annotation canvases size themselves at draw time — redraw when the layout changes
   useEffect(() => {
@@ -560,8 +615,6 @@ export default function ConsultThread({ conversationId, counterpart, onCallActiv
       setUploading(false);
     }
   }
-
-  // ---- Workstream 3: voice messages ----
 
   // ---- Workstream 3: voice messages ----
 

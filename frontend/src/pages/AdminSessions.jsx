@@ -1,34 +1,7 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { apiFetch } from "../auth/api";
 import { pluralSuffix } from "../utils/text";
-
-function formatAgent(ua) {
-  if (!ua) return "—";
-  return ua.length > 60 ? ua.slice(0, 60) + "…" : ua;
-}
-
-function timeUntil(expires, now) {
-  const diff = new Date(expires) - now;
-  if (diff <= 0) return "expired";
-  const h = Math.floor(diff / 3_600_000);
-  const m = Math.floor((diff % 3_600_000) / 60_000);
-  return h > 0 ? `${h}h ${m}m` : `${m}m`;
-}
-
-function timeIdle(lastActivity, now) {
-  if (!lastActivity) return "—";
-  const diff = now - new Date(lastActivity);
-  if (diff < 30_000) return "just now";
-  const m = Math.floor(diff / 60_000);
-  const s = Math.floor((diff % 60_000) / 1000);
-  return m > 0 ? `${m}m ${s}s ago` : `${s}s ago`;
-}
-
-function idleWarnColor(lastActivity, now) {
-  if (!lastActivity) return "var(--orca-muted)";
-  const idleMs = now - new Date(lastActivity);
-  return idleMs > 10 * 60 * 1000 ? "#d97706" : "var(--orca-muted)";
-}
+import SessionTableRows from "../components/SessionTableRows";
 
 /**
  * AdminSessions — mounted at /adm/sessions.
@@ -121,51 +94,6 @@ export default function AdminSessions() {
     }
   }
 
-  const ROLE_COLORS = { worker: "#60a5fa", expert: "#a78bfa", admin: "#f472b6" };
-
-  function renderSessionRows() {
-    if (loading) {
-      return <tr><td colSpan={8} style={s.empty}>Loading sessions…</td></tr>;
-    }
-    if (filtered.length === 0) {
-      return <tr><td colSpan={8} style={s.empty}>No active sessions.</td></tr>;
-    }
-    return filtered.map((sess) => (
-      <tr key={sess.id}>
-        <td style={s.td}>
-          <span style={s.name}>{sess.name}</span>
-          <br />
-          <span style={s.email}>{sess.email}</span>
-        </td>
-        <td style={s.td}>
-          <span style={{ ...s.badge, color: ROLE_COLORS[sess.role] || "#94a3b8" }}>
-            {sess.role}
-          </span>
-        </td>
-        <td style={{ ...s.td, fontFamily: "monospace", fontSize: 12 }}>
-          {sess.source_ip || "—"}
-        </td>
-        <td style={{ ...s.td, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "monospace", fontSize: 11, color: "var(--orca-muted)" }} title={sess.user_agent}>
-          {formatAgent(sess.user_agent)}
-        </td>
-        <td style={{ ...s.td, fontFamily: "monospace", fontSize: 12, color: "var(--orca-muted)" }}>
-          {new Date(sess.created_at).toLocaleString()}
-        </td>
-        <td style={{ ...s.td, fontFamily: "monospace", fontSize: 12, color: idleWarnColor(sess.last_activity, now) }}>
-          {timeIdle(sess.last_activity, now)}
-        </td>
-        <td style={{ ...s.td, fontFamily: "monospace", fontSize: 12 }}>
-          {timeUntil(sess.expires_at, now)}
-        </td>
-        <td style={{ ...s.td, textAlign: "right" }}>
-          <button style={s.terminateBtn} onClick={() => setConfirm(sess)}>
-            Terminate
-          </button>
-        </td>
-      </tr>
-    ));
-  }
-
   return (
     <div style={s.page}>
       <div style={s.header}>
@@ -230,7 +158,13 @@ export default function AdminSessions() {
             </tr>
           </thead>
           <tbody>
-            {renderSessionRows()}
+            <SessionTableRows
+              loading={loading}
+              filtered={filtered}
+              now={now}
+              onTerminate={setConfirm}
+              styles={s}
+            />
           </tbody>
         </table>
       </div>
