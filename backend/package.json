@@ -57,5 +57,9 @@
     ],
     "coverageReporters": ["lcov", "text"],
     "coverageDirectory": "coverage"
+  },
+  "overrides": {
+    "async": "^3.2.6",
+    "js-yaml": "^4.2.0"
   }
 }
