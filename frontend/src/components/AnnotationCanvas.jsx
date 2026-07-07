@@ -5,6 +5,11 @@ import { apiFetch } from "../auth/api";
 const COLORS = ["#ef4444", "#22c55e", "#3b82f6", "#f59e0b", "#ffffff"];
 const MAX_STAGE_WIDTH = 720;
 
+function lineKey(line, prefix) {
+  const head = line.points?.slice(0, 2).join(",") ?? "";
+  return `${prefix}-${line.color}-${line.strokeWidth}-${head}-${line.points?.length ?? 0}`;
+}
+
 /**
  * AnnotationCanvas — Single Responsibility split from ConsultThread: this
  * component only knows how to draw on ONE image and persist a new overlay
@@ -29,6 +34,7 @@ export default function AnnotationCanvas({ fileId, downloadUrl, existingVersions
 
   const isDrawingRef = useRef(false);
   const objectUrlRef = useRef(null);
+  const nextLineIdRef = useRef(0);
 
   // Load the image via the authenticated download endpoint (it isn't a
   // plain <img src="..."> because /api file downloads require the Bearer
@@ -50,10 +56,14 @@ export default function AnnotationCanvas({ fileId, downloadUrl, existingVersions
           setImage(img);
           setScale(Math.min(1, MAX_STAGE_WIDTH / img.naturalWidth));
         };
-        img.onerror = () => !cancelled && setError("Could not decode image.");
+        img.onerror = () => {
+          if (cancelled) return;
+          setError("Could not decode image.");
+        };
         img.src = url;
       } catch {
-        if (!cancelled) setError("Could not load image.");
+        if (cancelled) return;
+        setError("Could not load image.");
       }
     })();
 
@@ -65,8 +75,8 @@ export default function AnnotationCanvas({ fileId, downloadUrl, existingVersions
 
   // Flatten every past version's lines into one read-only array, in order,
   // so earlier authors' strokes are always visible underneath new ones.
-  const historyLines = (existingVersions || []).flatMap(
-    (v) => v.overlay_data?.lines || []
+  const historyLines = (existingVersions || []).flatMap((v) =>
+    (v.overlay_data?.lines || []).map((line) => ({ ...line, version: v.version }))
   );
 
   const stageWidth = image ? Math.round(image.naturalWidth * scale) : MAX_STAGE_WIDTH;
@@ -80,19 +90,20 @@ export default function AnnotationCanvas({ fileId, downloadUrl, existingVersions
   const handlePointerDown = useCallback((e) => {
     isDrawingRef.current = true;
     const { x, y } = toStagePoint(e.target.getStage());
-    setNewLines((prev) => [...prev, { color, strokeWidth, points: [x, y] }]);
+    setNewLines((prev) => [...prev, { id: ++nextLineIdRef.current, color, strokeWidth, points: [x, y] }]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [color, strokeWidth, scale]);
 
   const handlePointerMove = useCallback((e) => {
-    if (!isDrawingRef.current) return;
-    const { x, y } = toStagePoint(e.target.getStage());
-    setNewLines((prev) => {
-      const next = prev.slice();
-      const last = next[next.length - 1];
-      next[next.length - 1] = { ...last, points: [...last.points, x, y] };
-      return next;
-    });
+    if (isDrawingRef.current) {
+      const { x, y } = toStagePoint(e.target.getStage());
+      setNewLines((prev) => {
+        const next = prev.slice();
+        const last = next.at(-1);
+        if (last) next[next.length - 1] = { ...last, points: [...last.points, x, y] };
+        return next;
+      });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scale]);
 
@@ -166,9 +177,7 @@ export default function AnnotationCanvas({ fileId, downloadUrl, existingVersions
         {error && <div style={s.error}>{error}</div>}
 
         <div style={s.canvasWrap}>
-          {!image ? (
-            <p style={s.loading}>Loading image…</p>
-          ) : (
+          {image ? (
             <Stage
               width={stageWidth}
               height={stageHeight}
@@ -182,9 +191,9 @@ export default function AnnotationCanvas({ fileId, downloadUrl, existingVersions
             >
               <Layer scaleX={scale} scaleY={scale} listening={false}>
                 <KonvaImage image={image} />
-                {historyLines.map((line, i) => (
+                {historyLines.map((line) => (
                   <Line
-                    key={`history-${i}`}
+                    key={lineKey(line, `history-${line.version}`)}
                     points={line.points}
                     stroke={line.color}
                     strokeWidth={line.strokeWidth}
@@ -195,9 +204,9 @@ export default function AnnotationCanvas({ fileId, downloadUrl, existingVersions
                 ))}
               </Layer>
               <Layer scaleX={scale} scaleY={scale}>
-                {newLines.map((line, i) => (
+                {newLines.map((line) => (
                   <Line
-                    key={`new-${i}`}
+                    key={`new-${line.id}`}
                     points={line.points}
                     stroke={line.color}
                     strokeWidth={line.strokeWidth}
@@ -207,6 +216,8 @@ export default function AnnotationCanvas({ fileId, downloadUrl, existingVersions
                 ))}
               </Layer>
             </Stage>
+          ) : (
+            <p style={s.loading}>Loading image…</p>
           )}
         </div>
       </div>

@@ -22,12 +22,12 @@ export default function VerifyEmail() {
       try {
         const res = await apiFetch(`/api/auth/verify-email?token=${encodeURIComponent(token)}`);
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          setStatus("error");
-          setMessage(data.error || "This verification link is invalid or has expired.");
-        } else {
+        if (res.ok) {
           setStatus("success");
           setMessage(data.message || "Email verified. You can now log in.");
+        } else {
+          setStatus("error");
+          setMessage(data.error || "This verification link is invalid or has expired.");
         }
       } catch {
         setStatus("error");

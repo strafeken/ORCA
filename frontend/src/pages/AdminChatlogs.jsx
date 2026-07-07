@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { apiFetch } from "../auth/api";
 import { useAuthedBlobUrl } from "../hooks/useAuthedBlobURL";
+import { pluralSuffix } from "../utils/text";
 
 /**
  * AdminChatLogs — mounted at /admin/chatlogs.
@@ -100,13 +101,47 @@ export default function AdminChatLogs() {
 
   const ROLE_COLORS = { worker: "#60a5fa", expert: "#a78bfa", admin: "#f472b6" };
 
+  function renderConversationList() {
+    if (loadingConvs) return <p style={s.emptyMsg}>Loading…</p>;
+    if (filtered.length === 0) return <p style={s.emptyMsg}>No conversations found.</p>;
+    return (
+      <div style={s.convList}>
+        {filtered.map((c) => (
+          <button
+            key={c.id}
+            style={{
+              ...s.convItem,
+              background: selected?.id === c.id ? "var(--orca-line)" : "transparent",
+              borderLeft: selected?.id === c.id ? "3px solid var(--orca-hi)" : "3px solid transparent",
+            }}
+            onClick={() => selectConversation(c)}
+          >
+            <div style={s.convNames}>
+              <span style={s.convName}>{c.worker_name}</span>
+              <span style={s.convSep}>↔</span>
+              <span style={s.convName}>{c.expert_name}</span>
+            </div>
+            <div style={s.convMeta}>
+              <span style={s.convMsgCount}>
+                {c.message_count} msg{pluralSuffix(c.message_count)}
+              </span>
+              <span style={s.convDate}>
+                {new Date(c.updated_at).toLocaleDateString()}
+              </span>
+            </div>
+          </button>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div style={s.page}>
       <div style={s.header}>
         <div>
           <h1 style={s.title}>Chat Logs</h1>
           <p style={s.subtitle}>
-            {conversations.length} conversation{conversations.length !== 1 ? "s" : ""}
+            {conversations.length} conversation{pluralSuffix(conversations.length)}
           </p>
         </div>
         <div style={s.headerRight}>
@@ -142,49 +177,12 @@ export default function AdminChatLogs() {
             <p style={{ color: "#f87171", fontSize: 13, padding: "8px 0" }}>{convError}</p>
           )}
 
-          {loadingConvs ? (
-            <p style={s.emptyMsg}>Loading…</p>
-          ) : filtered.length === 0 ? (
-            <p style={s.emptyMsg}>No conversations found.</p>
-          ) : (
-            <div style={s.convList}>
-              {filtered.map((c) => (
-                <button
-                  key={c.id}
-                  style={{
-                    ...s.convItem,
-                    background: selected?.id === c.id ? "var(--orca-line)" : "transparent",
-                    borderLeft: selected?.id === c.id ? "3px solid var(--orca-hi)" : "3px solid transparent",
-                  }}
-                  onClick={() => selectConversation(c)}
-                >
-                  <div style={s.convNames}>
-                    <span style={s.convName}>{c.worker_name}</span>
-                    <span style={s.convSep}>↔</span>
-                    <span style={s.convName}>{c.expert_name}</span>
-                  </div>
-                  <div style={s.convMeta}>
-                    <span style={s.convMsgCount}>
-                      {c.message_count} msg{c.message_count !== 1 ? "s" : ""}
-                    </span>
-                    <span style={s.convDate}>
-                      {new Date(c.updated_at).toLocaleDateString()}
-                    </span>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
+          {renderConversationList()}
         </div>
 
         {/* ── RIGHT: message viewer ── */}
         <div className="orca-chatlog-detail" style={s.rightPanel}>
-          {!selected ? (
-            <div style={s.noSelection}>
-              <span style={{ fontSize: 36 }}>💬</span>
-              <p>Select a conversation to view its log.</p>
-            </div>
-          ) : (
+          {selected ? (
             <>
               {/* Header */}
               <div style={s.convHeader}>
@@ -215,34 +213,20 @@ export default function AdminChatLogs() {
                 </button>
               </div>
 
-              {/* Message thread */}
               <div style={s.messageList}>
-                {loadingMsgs ? (
-                  <p style={s.emptyMsg}>Loading messages…</p>
-                ) : messages.length === 0 ? (
-                  <p style={s.emptyMsg}>No messages in this conversation.</p>
-                ) : messages.map((m) => (
-                  <div key={`${m.type}-${m.id}`} style={s.message}>
-                    <div style={s.msgHeader}>
-                      <span style={{ ...s.msgSender, color: ROLE_COLORS[m.sender_role] || "#94a3b8" }}>
-                        {m.sender_name}
-                      </span>
-                      <span style={s.msgRole}>{m.sender_role}</span>
-                      <span style={s.msgTime}>
-                        {new Date(m.sent_at).toLocaleString()}
-                      </span>
-                    </div>
-                    {m.type === "file" ? (
-                      <AdminFileItem convId={selected.id} item={m} />
-                    ) : m.type === "voice" ? (
-                      <AdminVoiceItem convId={selected.id} item={m} />
-                    ) : (
-                      <p style={s.msgContent}>{m.content}</p>
-                    )}
-                  </div>
-                ))}
+                <ChatlogMessageList
+                  loading={loadingMsgs}
+                  messages={messages}
+                  convId={selected.id}
+                  roleColors={ROLE_COLORS}
+                />
               </div>
             </>
+          ) : (
+            <div style={s.noSelection}>
+              <span style={{ fontSize: 36 }}>💬</span>
+              <p>Select a conversation to view its log.</p>
+            </div>
           )}
         </div>
       </div>
@@ -253,8 +237,7 @@ export default function AdminChatLogs() {
           <div style={s.dialog}>
             <h2 style={s.dialogTitle}>Permanently delete chat log?</h2>
             <p style={s.dialogBody}>
-              This will permanently delete all {selected.message_count} text message
-              {selected.message_count !== 1 ? "s" : ""} in conversation #{selected.id}
+              This will permanently delete all {selected.message_count} text message{pluralSuffix(selected.message_count)} in conversation #{selected.id}
               between <strong>{selected.worker_name}</strong> and{" "}
               <strong>{selected.expert_name}</strong>, along with every uploaded
               file, image and voice message — removed from both the database and
@@ -280,6 +263,31 @@ export default function AdminChatLogs() {
       )}
     </div>
   );
+}
+
+function ChatlogMessageList({ loading, messages, convId, roleColors }) {
+  if (loading) return <p style={s.emptyMsg}>Loading messages…</p>;
+  if (messages.length === 0) return <p style={s.emptyMsg}>No messages in this conversation.</p>;
+  return messages.map((m) => (
+    <div key={`${m.type}-${m.id}`} style={s.message}>
+      <div style={s.msgHeader}>
+        <span style={{ ...s.msgSender, color: roleColors[m.sender_role] || "#94a3b8" }}>
+          {m.sender_name}
+        </span>
+        <span style={s.msgRole}>{m.sender_role}</span>
+        <span style={s.msgTime}>
+          {new Date(m.sent_at).toLocaleString()}
+        </span>
+      </div>
+      {m.type === "file" ? (
+        <AdminFileItem convId={convId} item={m} />
+      ) : m.type === "voice" ? (
+        <AdminVoiceItem convId={convId} item={m} />
+      ) : (
+        <p style={s.msgContent}>{m.content}</p>
+      )}
+    </div>
+  ));
 }
 
 /**

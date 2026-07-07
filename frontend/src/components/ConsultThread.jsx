@@ -5,6 +5,13 @@ import { apiFetch } from "../auth/api";
 import { useAuthedBlobUrl } from "../hooks/useAuthedBlobURL";
 import AnnotationCanvas from "./AnnotationCanvas";
 import { useCallGuard } from "./callGuard";
+import CallHeaderAction from "./CallHeaderAction";
+import {
+  handlePeerConnectionStateChange,
+  isActiveCallState,
+  normPoint,
+  registerConsultThreadSocketHandlers,
+} from "./consultThreadSocket";
 
 const MAX_FILE_MB = 15;
 const MAX_VOICE_SECONDS = 300;
@@ -30,10 +37,6 @@ const MAX_VOICE_SECONDS = 300;
 const STROKE_COLORS = { worker: "#22d3ee", expert: "#f59e0b" };
 const MAX_STROKE_POINTS = 512;
 const RING_TIMEOUT_MS = 30000; // auto-cancel an unanswered outgoing call
-
-// Call lifecycle states where media is (or is about to be) active — used to
-// warn before the user leaves and to gate the leave guard.
-const ACTIVE_CALL_STATES = ["ringing", "connecting", "in-call"];
 
 export default function ConsultThread({ conversationId, counterpart, onCallActiveChange, onBack }) {
   const convId = conversationId;
@@ -72,6 +75,7 @@ export default function ConsultThread({ conversationId, counterpart, onCallActiv
   const mediaRecorderRef = useRef(null);
   const recordedChunksRef = useRef([]);
   const recordTimerRef = useRef(null);
+  const stopRecordingRef = useRef(null);
   // FR-11 live call annotation + camera flip
   const remoteCanvasRef = useRef(null); // overlay I draw on (their video)
   const localCanvasRef = useRef(null);  // overlay showing their drawings on my feed
@@ -177,9 +181,10 @@ export default function ConsultThread({ conversationId, counterpart, onCallActiv
       audio: { echoCancellation: true, noiseSuppression: true },
     });
     localStreamRef.current = stream;
-    if (localVideoRef.current) {
-      localVideoRef.current.srcObject = stream;
-      await localVideoRef.current.play().catch(() => {});
+    const preview = localVideoRef.current;
+    if (preview) {
+      preview.srcObject = stream;
+      await preview.play().catch(() => {});
     }
     // Only offer the flip control when the device actually has more than one
     // camera (i.e. a phone). Device labels/ids are only populated after the
@@ -225,9 +230,10 @@ export default function ConsultThread({ conversationId, counterpart, onCallActiv
         oldVideoTrack.stop();
       }
       currentStream.addTrack(newVideoTrack);
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = currentStream;
-        await localVideoRef.current.play().catch(() => {});
+      const preview = localVideoRef.current;
+      if (preview) {
+        preview.srcObject = currentStream;
+        await preview.play().catch(() => {});
       }
       facingModeRef.current = nextMode;
       redrawAnnotations(); // aspect ratio may change; keep strokes aligned
@@ -280,9 +286,11 @@ export default function ConsultThread({ conversationId, counterpart, onCallActiv
     };
 
     pc.ontrack = (e) => {
-      if (remoteVideoRef.current && e.streams[0]) {
-        remoteVideoRef.current.srcObject = e.streams[0];
-        remoteVideoRef.current.play()
+      const remoteStream = e.streams[0];
+      const remoteEl = remoteVideoRef.current;
+      if (remoteEl && remoteStream) {
+        remoteEl.srcObject = remoteStream;
+        remoteEl.play()
           .then(() => setNeedsPlayClick(false))
           .catch((err) => {
             if (err.name === "NotAllowedError") setNeedsPlayClick(true);
@@ -291,23 +299,20 @@ export default function ConsultThread({ conversationId, counterpart, onCallActiv
     };
 
     pc.onconnectionstatechange = () => {
-      if (pc.connectionState === "connected") {
-        setCallStatus("in-call");
-        setCallNotice(null);
-        return;
-      }
-      if (pc.connectionState === "disconnected") {
-        // Often transient — ICE may recover on its own. Reassure, don't kill.
-        setCallNotice("Call connection unstable — text chat is unaffected.");
-        return;
-      }
-      // Graceful degradation (SR-15): the peer link is gone for good. Tear
-      // the call down cleanly; the chat socket is separate and keeps working.
-      if (["failed", "closed"].includes(pc.connectionState) && pcRef.current === pc) {
-        endCallMedia();
-        setShowVideo(false);
-        setCallNotice("Video call ended — text chat is still available.");
-      }
+      handlePeerConnectionStateChange(pc, pcRef.current, {
+        onConnected: () => {
+          setCallStatus("in-call");
+          setCallNotice(null);
+        },
+        onUnstable: () => {
+          setCallNotice("Call connection unstable — text chat is unaffected.");
+        },
+        onEnded: () => {
+          endCallMedia();
+          setShowVideo(false);
+          setCallNotice("Video call ended — text chat is still available.");
+        },
+      });
     };
 
     pcRef.current = pc;
@@ -379,149 +384,85 @@ export default function ConsultThread({ conversationId, counterpart, onCallActiv
 
       socket = io("/", { auth: { token }, path: "/socket.io" });
 
-      socket.on("connect", () => {
-        if (cancelled) return;
-        setStatus("connected");
-        socket.emit("chat:join", { conversationId: convId });
-        socket.emit("call:join", { conversationId: convId });
-      });
-
-      socket.on("connect_error", (err) => {
-        if (!cancelled) setStatus(`error: ${err.message}`);
-      });
-
-      socket.on("chat:history", ({ messages: history }) => {
-        if (!cancelled) setMessages(history);
-      });
-
-      socket.on("chat:message", (msg) => {
-        if (!cancelled) setMessages((prev) => [...prev, msg]);
-      });
-
-      socket.on("chat:file", (fileMsg) => {
-        if (!cancelled) setMessages((prev) => [...prev, fileMsg]);
-      });
-
-      socket.on("chat:voice", (voiceMsg) => {
-        if (!cancelled) setMessages((prev) => [...prev, voiceMsg]);
-      });
-
-      socket.on("chat:annotation", (annotation) => {
-        if (cancelled) return;
-        setAnnotationCounts((prev) => ({
-          ...prev,
-          [annotation.file_id]: Math.max(prev[annotation.file_id] || 0, annotation.version),
-        }));
-      });
-
-      socket.on("chat:error", ({ message }) => {
-        if (!cancelled) setThreadError(message);
-      });
-
-      socket.on("call:user-joined", ({ name, userId }) => {
-        if (cancelled || userId === user?.id) return;
-        setCounterpartOnline(true);
-        setRemoteUserName(name);
-        setCallNotice(null);
-      });
-
-      // Incoming call — show the accept/decline prompt instead of connecting (#3).
-      socket.on("call:ring", ({ name }) => {
-        if (cancelled) return;
-        // Busy (already in or placing a call): auto-decline.
-        if (callStatusRef.current !== "idle") {
-          socket.emit("call:decline", { conversationId: convId });
-          return;
-        }
-        callRoleRef.current = "callee";
-        acceptedRef.current = false;
-        if (name) setRemoteUserName(name);
-        setCallNotice(null);
-        setCallStatus("incoming");
-      });
-
-      // Callee accepted our outgoing call — send the SDP offer now.
-      socket.on("call:accept", () => {
-        if (cancelled || callRoleRef.current !== "caller") return;
-        clearRingTimeout();
-        beginCallerOffer().catch(() => {
-          setThreadError("Failed to start the call.");
+      registerConsultThreadSocketHandlers(socket, {
+        convId,
+        userId: user?.id,
+        isCancelled: () => cancelled,
+        setStatus,
+        setMessages,
+        appendMessage: (msg) => setMessages((prev) => [...prev, msg]),
+        onAnnotation: (annotation) => {
+          setAnnotationCounts((prev) => ({
+            ...prev,
+            [annotation.file_id]: Math.max(prev[annotation.file_id] || 0, annotation.version),
+          }));
+        },
+        setThreadError,
+        setCounterpartOnline,
+        setRemoteUserName,
+        setCallNotice,
+        getCallStatus: () => callStatusRef.current,
+        getCallRole: () => callRoleRef.current,
+        isAccepted: () => acceptedRef.current,
+        onIncomingRing: (name) => {
+          callRoleRef.current = "callee";
+          acceptedRef.current = false;
+          if (name) setRemoteUserName(name);
+          setCallNotice(null);
+          setCallStatus("incoming");
+        },
+        onCallerAccepted: () => {
+          clearRingTimeout();
+          beginCallerOffer().catch(() => {
+            setThreadError("Failed to start the call.");
+            endCallMedia();
+            setShowVideo(false);
+          });
+        },
+        onCallerDeclined: () => {
+          clearRingTimeout();
           endCallMedia();
           setShowVideo(false);
-        });
-      });
-
-      // Callee declined our outgoing call.
-      socket.on("call:decline", () => {
-        if (cancelled || callRoleRef.current !== "caller") return;
-        clearRingTimeout();
-        endCallMedia();
-        setShowVideo(false);
-        setCallNotice(`${peerNameRef.current || "They"} declined the call.`);
-      });
-
-      // Caller cancelled before we (the callee) answered.
-      socket.on("call:cancel", () => {
-        if (cancelled || callStatusRef.current !== "incoming") return;
-        callRoleRef.current = null;
-        acceptedRef.current = false;
-        setCallStatus("idle");
-        setShowVideo(false);
-        setCallNotice(`Missed call from ${peerNameRef.current || "them"}.`);
-      });
-
-      // Only accept an offer we're expecting — i.e. we accepted an incoming
-      // call. This is what stops a call from connecting automatically (#3).
-      socket.on("call:offer", ({ offer }) => {
-        if (cancelled || callRoleRef.current !== "callee" || !acceptedRef.current) return;
-        handleOffer(offer).catch(() => setThreadError("Failed to accept incoming call."));
-      });
-
-      socket.on("call:answer", ({ answer }) => {
-        handleAnswer(answer).catch(() => {});
-      });
-
-      socket.on("call:ice-candidate", ({ candidate }) => {
-        handleRemoteCandidate(candidate).catch(() => {});
-      });
-
-      socket.on("call:annotation", ({ stroke }) => {
-        if (cancelled || !Array.isArray(stroke?.points)) return;
-        peerStrokesRef.current.push(stroke);
-        redrawAnnotations();
-      });
-
-      // Peer cleared THEIR drawings — remove only their strokes, keep mine (#2).
-      socket.on("call:annotation-clear", () => {
-        if (!cancelled) clearPeerStrokes();
-      });
-
-      socket.on("call:ended", () => {
-        if (cancelled) return;
-        endCallMedia();
-        setShowVideo(false);
-        setCallNotice("Call ended — text chat remains available.");
-      });
-
-      socket.on("call:user-left", ({ userId }) => {
-        if (cancelled) return;
-        endCallMedia();
-        setShowVideo(false);
-        if (!userId || userId !== user?.id) {
+          setCallNotice(`${peerNameRef.current || "They"} declined the call.`);
+        },
+        onCallerCancelled: () => {
+          callRoleRef.current = null;
+          acceptedRef.current = false;
+          setCallStatus("idle");
+          setShowVideo(false);
+          setCallNotice(`Missed call from ${peerNameRef.current || "them"}.`);
+        },
+        onRemoteOffer: (offer) => {
+          handleOffer(offer).catch(() => setThreadError("Failed to accept incoming call."));
+        },
+        onRemoteAnswer: (answer) => {
+          handleAnswer(answer).catch(() => {});
+        },
+        onRemoteCandidate: (candidate) => {
+          handleRemoteCandidate(candidate).catch(() => {});
+        },
+        onRemoteAnnotation: (stroke) => {
+          peerStrokesRef.current.push(stroke);
+          redrawAnnotations();
+        },
+        onRemoteAnnotationClear: clearPeerStrokes,
+        onCallEnded: (message) => {
+          endCallMedia();
+          setShowVideo(false);
+          setCallNotice(message);
+        },
+        onUserLeft: (leftUserId) => {
+          endCallMedia();
+          setShowVideo(false);
+          if (leftUserId && leftUserId === user?.id) return;
           setCounterpartOnline(false);
           setRemoteUserName(null);
-        }
-      });
-
-      socket.on("call:error", ({ message }) => {
-        if (cancelled) return;
-        endCallMedia();
-        setShowVideo(false);
-        setCallNotice(message);
-      });
-
-      socket.on("disconnect", () => {
-        if (!cancelled) setStatus("disconnected");
+        },
+        onCallError: (message) => {
+          endCallMedia();
+          setShowVideo(false);
+          setCallNotice(message);
+        },
       });
 
       socketRef.current = socket;
@@ -547,7 +488,7 @@ export default function ConsultThread({ conversationId, counterpart, onCallActiv
 
   // #4 — warn before the tab is closed/refreshed while a call is active.
   useEffect(() => {
-    if (!ACTIVE_CALL_STATES.includes(callStatus)) return;
+    if (isActiveCallState(callStatus)) return;
     const warn = (e) => {
       e.preventDefault();
       e.returnValue = ""; // required for the native "Leave site?" prompt
@@ -560,7 +501,7 @@ export default function ConsultThread({ conversationId, counterpart, onCallActiv
   // switching conversations mid-call) and to the shared CallGuardContext (which
   // the navbar reads to guard navigating away mid-call). Reset both on unmount.
   useEffect(() => {
-    const active = ACTIVE_CALL_STATES.includes(callStatus);
+    const active = isActiveCallState(callStatus);
     onCallActiveChange?.(active);
     setCallActive(active);
   }, [callStatus, onCallActiveChange, setCallActive]);
@@ -622,6 +563,50 @@ export default function ConsultThread({ conversationId, counterpart, onCallActiv
 
   // ---- Workstream 3: voice messages ----
 
+  // ---- Workstream 3: voice messages ----
+
+  const uploadVoiceMessage = useCallback(async (blob) => {
+    setUploading(true);
+    setThreadError(null);
+    try {
+      const form = new FormData();
+      form.append("audio", blob, "voice-message");
+      const res = await apiFetch(`/api/conversations/${convId}/voice`, {
+        method: "POST",
+        body: form,
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Could not send voice message.");
+      }
+    } catch (err) {
+      setThreadError(err.message);
+    } finally {
+      setUploading(false);
+    }
+  }, [convId]);
+
+  const stopRecording = useCallback((autoStopped = false) => {
+    const recorder = mediaRecorderRef.current;
+    if (recorder && recorder.state !== "inactive") {
+      recorder.addEventListener(
+        "stop",
+        async () => {
+          setRecording(false);
+          const blob = new Blob(recordedChunksRef.current, { type: recorder.mimeType || "audio/webm" });
+          if (autoStopped) setThreadError(`Voice message stopped automatically at ${MAX_VOICE_SECONDS}s.`);
+          await uploadVoiceMessage(blob);
+        },
+        { once: true }
+      );
+      recorder.stop();
+    }
+  }, [uploadVoiceMessage]);
+
+  useEffect(() => {
+    stopRecordingRef.current = stopRecording;
+  }, [stopRecording]);
+
   async function startRecording() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -641,51 +626,13 @@ export default function ConsultThread({ conversationId, counterpart, onCallActiv
       recordTimerRef.current = setInterval(() => {
         setRecordSeconds((s) => {
           if (s + 1 >= MAX_VOICE_SECONDS) {
-            stopRecording(true);
+            stopRecordingRef.current?.(true);
           }
           return s + 1;
         });
       }, 1000);
     } catch {
       setThreadError("Could not access microphone.");
-    }
-  }
-
-  function stopRecording(autoStopped = false) {
-    const recorder = mediaRecorderRef.current;
-    if (!recorder || recorder.state === "inactive") return;
-
-    recorder.addEventListener(
-      "stop",
-      async () => {
-        setRecording(false);
-        const blob = new Blob(recordedChunksRef.current, { type: recorder.mimeType || "audio/webm" });
-        if (autoStopped) setThreadError(`Voice message stopped automatically at ${MAX_VOICE_SECONDS}s.`);
-        await uploadVoiceMessage(blob);
-      },
-      { once: true }
-    );
-    recorder.stop();
-  }
-
-  async function uploadVoiceMessage(blob) {
-    setUploading(true);
-    setThreadError(null);
-    try {
-      const form = new FormData();
-      form.append("audio", blob, "voice-message");
-      const res = await apiFetch(`/api/conversations/${convId}/voice`, {
-        method: "POST",
-        body: form,
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "Could not send voice message.");
-      }
-    } catch (err) {
-      setThreadError(err.message);
-    } finally {
-      setUploading(false);
     }
   }
 
@@ -763,19 +710,12 @@ export default function ConsultThread({ conversationId, counterpart, onCallActiv
     setShowVideo(false);
   }
 
-  // ── Annotation pointer handlers (remote video canvas) ────────────
-  function normPoint(e) {
-    const rect = e.currentTarget.getBoundingClientRect();
-    return {
-      x: Math.min(Math.max((e.clientX - rect.left) / rect.width, 0), 1),
-      y: Math.min(Math.max((e.clientY - rect.top) / rect.height, 0), 1),
-    };
-  }
-
+  // ── Annotation pointer handlers (remote video overlay) ───────────
   function handleDrawStart(e) {
-    if (callStatus !== "in-call") return;
-    e.currentTarget.setPointerCapture?.(e.pointerId);
-    drawingRef.current = { color: myColor, points: [normPoint(e)] };
+    if (callStatus === "in-call") {
+      e.currentTarget.setPointerCapture?.(e.pointerId);
+      drawingRef.current = { color: myColor, points: [normPoint(e)] };
+    }
   }
 
   function handleDrawMove(e) {
@@ -827,25 +767,15 @@ export default function ConsultThread({ conversationId, counterpart, onCallActiv
           <span style={s.statusText}>
             {counterpartOnline ? "Online" : "Offline"}
           </span>
-          {callStatus === "idle" ? (
-            <button
-              className="orca-call-btn"
-              style={{ ...s.callBtn, ...(!counterpartOnline ? s.callBtnDisabled : {}) }}
-              onClick={startCall}
-              disabled={status !== "connected" || !counterpartOnline}
-              title={!counterpartOnline ? "Available when they open this consultation" : "Start video call"}
-            >
-              Video call
-            </button>
-          ) : callStatus === "incoming" ? null : callStatus === "ringing" ? (
-            <button className="orca-hangup-btn" style={s.hangupBtn} onClick={() => cancelCall()}>
-              Cancel
-            </button>
-          ) : (
-            <button className="orca-hangup-btn" style={s.hangupBtn} onClick={hangUp}>
-              {callStatus === "in-call" ? "End call" : "Cancel"}
-            </button>
-          )}
+          <CallHeaderAction
+            callStatus={callStatus}
+            counterpartOnline={counterpartOnline}
+            status={status}
+            onStartCall={startCall}
+            onCancelCall={() => cancelCall()}
+            onHangUp={hangUp}
+            styles={s}
+          />
         </div>
       </div>
 
@@ -876,7 +806,7 @@ export default function ConsultThread({ conversationId, counterpart, onCallActiv
               <video ref={localVideoRef} style={s.video} autoPlay muted playsInline>
                 <track kind="captions" label="Captions unavailable" />
               </video>
-              <canvas ref={localCanvasRef} style={s.annotationCanvas(false)} />
+              <canvas ref={localCanvasRef} style={s.annotationCanvas()} />
               <span style={s.videoLabel}>You</span>
               {canFlip && (
                 <button
@@ -894,15 +824,14 @@ export default function ConsultThread({ conversationId, counterpart, onCallActiv
               <video ref={remoteVideoRef} style={s.video} autoPlay playsInline>
                 <track kind="captions" label="Captions unavailable" />
               </video>
-              <canvas
-                ref={remoteCanvasRef}
-                role="application"
-                aria-label="Draw annotations on remote video"
-                style={s.annotationCanvas(callStatus === "in-call")}
+              <canvas ref={remoteCanvasRef} style={s.annotationCanvas()} />
+              <div
+                style={s.annotationOverlay(callStatus === "in-call")}
                 onPointerDown={handleDrawStart}
                 onPointerMove={handleDrawMove}
                 onPointerUp={handleDrawEnd}
                 onPointerCancel={handleDrawEnd}
+                aria-hidden="true"
               />
               <span style={s.videoLabel}>{remoteUserName || counterpart?.name || "Waiting…"}</span>
               {(callStatus === "ringing" || callStatus === "connecting") && (
@@ -1117,7 +1046,12 @@ const s = {
   video: { width: "100%", height: "100%", objectFit: "cover" },
   videoLabel: { position: "absolute", bottom: 6, left: 6, color: "#fff", fontSize: 10, background: "rgba(0,0,0,0.55)", padding: "2px 6px", borderRadius: 4 },
   flipBtn: { position: "absolute", top: 6, right: 6, padding: "4px 8px", borderRadius: 6, border: "none", background: "rgba(0,0,0,0.55)", color: "#fff", fontSize: 11, cursor: "pointer", touchAction: "manipulation" },
-  annotationCanvas: (drawable) => ({
+  annotationCanvas: () => ({
+    position: "absolute", inset: 0, width: "100%", height: "100%",
+    pointerEvents: "none",
+    touchAction: "none",
+  }),
+  annotationOverlay: (drawable) => ({
     position: "absolute", inset: 0, width: "100%", height: "100%",
     pointerEvents: drawable ? "auto" : "none",
     cursor: drawable ? "crosshair" : "default",
