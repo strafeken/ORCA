@@ -10,6 +10,14 @@ const BASE_TABS = [
 
 const DATA_TAB = { id: "data", label: "Data & privacy" };
 
+function mergeTabStyle(isAdmin, tabId, activeTab, styles) {
+  const base = isAdmin ? styles.tabItemHorizontal : styles.tabItem;
+  if (tabId === activeTab) {
+    return { ...base, ...(isAdmin ? styles.tabItemHorizontalActive : styles.tabItemActive) };
+  }
+  return base;
+}
+
 export default function UserProfile() {
   const [searchParams, setSearchParams] = useSearchParams();
   const initialTab = searchParams.get("tab") || "personal";
@@ -60,10 +68,7 @@ export default function UserProfile() {
           <button
             key={t.id}
             onClick={() => selectTab(t.id)}
-            style={{
-              ...(isAdmin ? s.tabItemHorizontal : s.tabItem),
-              ...(tab === t.id ? (isAdmin ? s.tabItemHorizontalActive : s.tabItemActive) : {}),
-            }}
+            style={mergeTabStyle(isAdmin, t.id, tab, s)}
           >
             {t.label}
           </button>
@@ -207,11 +212,7 @@ function SecurityTab({ paths }) {
           <div>
             <div style={s.summaryTitle}>2-Step Verification</div>
             <div style={s.summarySub}>
-              {loading2fa
-                ? "Loading…"
-                : twoFactor?.enabled
-                ? `On since ${new Date(twoFactor.since).toLocaleDateString()}`
-                : "Off"}
+              {twoFactorSummary(twoFactor, loading2fa)}
             </div>
           </div>
         </Link>
@@ -242,6 +243,14 @@ function DataTab({ paths }) {
       </div>
     </div>
   );
+}
+
+function twoFactorSummary(twoFactor, loading2fa) {
+  if (loading2fa) return "Loading…";
+  if (twoFactor?.enabled) {
+    return `On since ${new Date(twoFactor.since).toLocaleDateString()}`;
+  }
+  return "Off";
 }
 
 const s = {

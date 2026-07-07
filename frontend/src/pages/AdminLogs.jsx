@@ -15,9 +15,49 @@ function severityRank(level) {
   }
 }
 
-// How many log rows to show per page. The backend caps a fetch at 200 entries,
-// so this yields at most a handful of pages — enough to page through without
-// the table growing unboundedly tall.
+function logTableColSpan(tab) {
+  if (tab === "all") return 9;
+  if (tab === "audit") return 8;
+  return 6;
+}
+
+function logRowBackground(expanded, idx) {
+  if (expanded) return "rgba(255,179,35,0.05)";
+  if (idx % 2 === 0) return "transparent";
+  return "rgba(255,255,255,0.015)";
+}
+
+function applyLogFilters(logs, { categoryFilter, actionFilter, search }) {
+  let result = [...logs];
+
+  if (categoryFilter !== "all") {
+    result = result.filter((l) => (l.category || "Other") === categoryFilter);
+  }
+  if (actionFilter !== "all") {
+    result = result.filter((l) => l.actionType === actionFilter);
+  }
+  if (search.trim()) {
+    const q = search.trim().toLowerCase();
+    result = result.filter((l) =>
+      (l.msg        || "").toLowerCase().includes(q) ||
+      (l.actionType || "").toLowerCase().includes(q) ||
+      (l.category   || "").toLowerCase().includes(q) ||
+      (l.userId     != null && String(l.userId).includes(q)) ||
+      (l.resourceId != null && String(l.resourceId).includes(q)) ||
+      (l.ip         || "").toLowerCase().includes(q)
+    );
+  }
+
+  result.sort((a, b) => severityRank(a.level) - severityRank(b.level));
+  return result;
+}
+
+function logTableEmptyMessage(loading, logs, filtered) {
+  if (loading && logs.length === 0) return "Loading logs…";
+  if (filtered.length === 0 && logs.length > 0) return "No entries match the current filters.";
+  return "No log entries found for this time range.";
+}
+
 const PAGE_SIZE = 25;
 
 /**
@@ -151,37 +191,10 @@ export default function AdminLogs() {
   }, [logs]);
 
   // Apply client-side text search + category + action filter.
-  const filtered = useMemo(() => {
-    let result = [...logs];
-
-    if (categoryFilter !== "all") {
-      result = result.filter((l) => (l.category || "Other") === categoryFilter);
-    }
-
-    if (actionFilter !== "all") {
-      result = result.filter((l) => l.actionType === actionFilter);
-    }
-
-    if (search.trim()) {
-      const q = search.trim().toLowerCase();
-      result = result.filter((l) =>
-        (l.msg        || "").toLowerCase().includes(q) ||
-        (l.actionType || "").toLowerCase().includes(q) ||
-        (l.category   || "").toLowerCase().includes(q) ||
-        (l.userId     != null && String(l.userId).includes(q)) ||
-        (l.resourceId != null && String(l.resourceId).includes(q)) ||
-        (l.ip         || "").toLowerCase().includes(q)
-      );
-    }
-
-    // Float elevated-severity entries to the top so warnings (and errors) are
-    // seen first instead of being buried at the bottom. Array.sort is stable,
-    // so within each severity level the existing newest-first order from Loki
-    // is preserved.
-    result.sort((a, b) => severityRank(a.level) - severityRank(b.level));
-
-    return result;
-  }, [logs, search, actionFilter, categoryFilter]);
+  const filtered = useMemo(
+    () => applyLogFilters(logs, { categoryFilter, actionFilter, search }),
+    [logs, search, actionFilter, categoryFilter]
+  );
 
   // ── Current page slice ─────────────────────────────────────────────
   // safePage clamps a possibly-stale page during render (e.g. filters shrank
@@ -329,14 +342,8 @@ export default function AdminLogs() {
 
       {/* ── Log table ─────────────────────────────────────────── */}
       <div style={s.tableWrapper}>
-        {loading && !logs.length ? (
-          <div style={s.emptyState}>Loading logs…</div>
-        ) : !filtered.length ? (
-          <div style={s.emptyState}>
-            {logs.length
-              ? "No entries match the current filters."
-              : "No log entries found for this time range."}
-          </div>
+        {(loading && logs.length === 0) || filtered.length === 0 ? (
+          <div style={s.emptyState}>{logTableEmptyMessage(loading, logs, filtered)}</div>
         ) : (
           <table style={s.table} aria-label="Log entries">
             <thead>
@@ -431,25 +438,11 @@ export default function AdminLogs() {
  * investigating an incident.
  */
 function LogRow({ log, idx, tab, expanded, onToggle, fmtTs }) {
-  // Column count per tab (must match the <th> set in the table header so the
-  // expanded-payload row spans the full width):
-  //   audit  = ts, level, category, action, userId, resource, ip, expand      → 8
-  //   all    = ts, level, job, category, action, userId, resource, ip, expand → 9
-  //   system = ts, level, job, userId, message, expand                        → 6
-  const colSpan = tab === "all" ? 9 : tab === "audit" ? 8 : 6;
+  const colSpan = logTableColSpan(tab);
 
   return (
     <>
-      <tr
-        style={{
-          ...s.tr,
-          background: expanded
-            ? "rgba(255,179,35,0.05)"
-            : idx % 2 === 0
-            ? "transparent"
-            : "rgba(255,255,255,0.015)",
-        }}
-      >
+      <tr style={{ ...s.tr, background: logRowBackground(expanded, idx) }}>
         {/* Timestamp */}
         <td style={{ ...s.td, fontVariantNumeric: "tabular-nums", fontSize: 11.5 }}>
           {fmtTs(log.ts)}

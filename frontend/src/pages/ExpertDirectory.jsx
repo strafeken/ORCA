@@ -44,6 +44,31 @@ export default function ExpertDirectory() {
     }
   }
 
+  function renderExpertList() {
+    if (loading) return <p style={s.muted}>Loading experts…</p>;
+    if (experts.length === 0) return <p style={s.muted}>No experts are available right now.</p>;
+    return (
+      <div style={s.grid}>
+        {experts.map((ex) => (
+          <div key={ex.id} style={s.card}>
+            <h2 style={s.name}>{ex.name}</h2>
+            {ex.bio && <p style={s.bio}>{ex.bio}</p>}
+            {ex.contact_number && (
+              <p style={s.contact}>Contact: {ex.contact_number}</p>
+            )}
+            <button
+              style={s.btn}
+              disabled={starting === ex.id}
+              onClick={() => startConsultation(ex.id)}
+            >
+              {starting === ex.id ? "Opening…" : "Start consultation"}
+            </button>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div style={{ maxWidth: 820, margin: "0 auto" }}>
       <Link to="/consult" style={s.back}>
@@ -56,30 +81,7 @@ export default function ExpertDirectory() {
 
       {error && <div style={s.error}>{error}</div>}
 
-      {loading ? (
-        <p style={s.muted}>Loading experts…</p>
-      ) : experts.length === 0 ? (
-        <p style={s.muted}>No experts are available right now.</p>
-      ) : (
-        <div style={s.grid}>
-          {experts.map((ex) => (
-            <div key={ex.id} style={s.card}>
-              <h2 style={s.name}>{ex.name}</h2>
-              {ex.bio && <p style={s.bio}>{ex.bio}</p>}
-              {ex.contact_number && (
-                <p style={s.contact}>Contact: {ex.contact_number}</p>
-              )}
-              <button
-                style={s.btn}
-                disabled={starting === ex.id}
-                onClick={() => startConsultation(ex.id)}
-              >
-                {starting === ex.id ? "Opening…" : "Start consultation"}
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
+      {renderExpertList()}
     </div>
   );
 }

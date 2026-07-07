@@ -42,6 +42,12 @@ export default function Login() {
 
   const shownError = localError || error;
 
+  function submitLabel() {
+    if (loading) return "Signing in…";
+    if (needTotp) return "Verify code";
+    return "Sign in";
+  }
+
   return (
     <div className="orca-login-split">
       <aside className="orca-login-brand">
@@ -122,7 +128,7 @@ export default function Login() {
               className="orca-btn orca-btn--primary orca-btn--block"
               disabled={loading}
             >
-              {loading ? "Signing in…" : needTotp ? "Verify code" : "Sign in"}
+              {submitLabel()}
             </button>
           </form>
 

@@ -25,7 +25,7 @@
   --orca-paper: #f5f3ee;
   --orca-ink: #e8ebf0;
   --orca-muted: #8a94a3;
-  --orca-faint: #5a6675;
+  --orca-faint: #7a8494;
 
   --orca-radius: 10px;
   --orca-radius-sm: 6px;
@@ -159,9 +159,9 @@ a:hover {
   font: 500 14px/1.4 var(--orca-sans);
   padding: 12px 14px;
   border-radius: var(--orca-radius-sm);
-  border: 1px solid rgba(255, 92, 92, 0.4);
-  background: rgba(255, 92, 92, 0.1);
-  color: #ffd2d2;
+  border: 1px solid #7f1d1d;
+  background: #3d1515;
+  color: #fecaca;
   margin-bottom: 18px;
 }
 

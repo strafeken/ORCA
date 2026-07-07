@@ -1,6 +1,36 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { apiFetch } from "../auth/api";
 
+function statusBadges(u) {
+  if (u.email.endsWith("@orca-deleted")) {
+    return [{ label: "Deleted", color: "#94a3b8", bg: "#1e293b" }];
+  }
+
+  const badges = [];
+  const hardLocked = !!u.is_hard_locked;
+  const softLocked = !!u.is_soft_locked;
+  const verified   = !!u.is_verified;
+  const approved   = !!u.is_approved;
+
+  if (hardLocked)                           badges.push({ label: "Hard locked", color: "#fca5a5", bg: "#450a0a" });
+  else if (softLocked)                      badges.push({ label: "Soft locked", color: "#fcd34d", bg: "#422006" });
+  if (!verified)                            badges.push({ label: "Unverified",  color: "#94a3b8", bg: "#1e293b" });
+  if (u.role === "expert" && !approved)     badges.push({ label: "Pending",     color: "#fdba74", bg: "#431407" });
+  if (u.role === "expert" && approved)      badges.push({ label: "Approved",    color: "#86efac", bg: "#052e16" });
+  return badges;
+}
+
+function userRowStyle(isDeleted, hardLocked) {
+  if (isDeleted) return { opacity: 0.5 };
+  if (hardLocked) return { background: "#1c0a0a" };
+  return {};
+}
+
+function emptyUsersMessage(tab, deletedUsersLength) {
+  if (tab === "deleted" && deletedUsersLength === 0) return "No deleted accounts.";
+  return "No users match your filters.";
+}
+
 /**
  * AdminUserManagement — mounted at /adm/users.
  *
@@ -36,14 +66,7 @@ export default function AdminUserManagement() {
   const [actionLoading, setActionLoading] = useState(false);
   const [actionMsg, setActionMsg] = useState(null);
 
-  // `loading` starts true so the initial fetch on mount never needs to call
-  // setLoading(true) synchronously inside the effect body — only the async
-  // .finally(() => setLoading(false)) fires, which the set-state-in-effect
-  // rule does not flag (state updates from resolved promises/callbacks are
-  // fine; only *synchronous* setState calls in the effect body itself are
-  // the rule's target). The refresh button's onClick is what re-arms the
-  // spinner for manual refreshes, since event handlers aren't covered by
-  // this rule either.
+  // `loading` starts true so the mount effect only resolves loading asynchronously.
   const fetchUsers = useCallback(() => {
     return apiFetch("/api/admin/users")
       .then((r) => r.json())
@@ -56,8 +79,7 @@ export default function AdminUserManagement() {
     fetchUsers();
   }, [fetchUsers]);
 
-  // Used by the Refresh button — an event handler, so setLoading(true) here
-  // is not subject to react-hooks/set-state-in-effect.
+  // Used by the Refresh button.
   function loadUsers() {
     setLoading(true);
     fetchUsers();
@@ -133,29 +155,6 @@ export default function AdminUserManagement() {
   }
 
   // ── Status badges ────────────────────────────────────────────────────
-  function statusBadges(u) {
-    // Deleted accounts (PII-anonymised by the backend) get a single badge
-    // and nothing else — their lock/verified state is an implementation
-    // detail of the soft-delete, not meaningful to show.
-    if (u.email.endsWith("@orca-deleted")) {
-      return [{ label: "Deleted", color: "#94a3b8", bg: "#1e293b" }];
-    }
-
-    const badges = [];
-    // Coerce MySQL 0/1 integers to booleans before branching.
-    const hardLocked = !!u.is_hard_locked;
-    const softLocked = !!u.is_soft_locked;
-    const verified   = !!u.is_verified;
-    const approved   = !!u.is_approved;
-
-    if (hardLocked)                           badges.push({ label: "Hard locked", color: "#fca5a5", bg: "#450a0a" });
-    else if (softLocked)                      badges.push({ label: "Soft locked", color: "#fcd34d", bg: "#422006" });
-    if (!verified)                            badges.push({ label: "Unverified",  color: "#94a3b8", bg: "#1e293b" });
-    if (u.role === "expert" && !approved)     badges.push({ label: "Pending",     color: "#fdba74", bg: "#431407" });
-    if (u.role === "expert" && approved)      badges.push({ label: "Approved",    color: "#86efac", bg: "#052e16" });
-    return badges;
-  }
-
   const ROLE_COLORS = { worker: "#60a5fa", expert: "#a78bfa", admin: "#f472b6" };
 
   return (
@@ -246,25 +245,13 @@ export default function AdminUserManagement() {
               <tr><td colSpan={6} style={s.empty}>Loading users…</td></tr>
             ) : filtered.length === 0 ? (
               <tr><td colSpan={6} style={s.empty}>
-                {tab === "deleted" && deletedUsers.length === 0
-                  ? "No deleted accounts."
-                  : "No users match your filters."}
+                {emptyUsersMessage(tab, deletedUsers.length)}
               </td></tr>
             ) : filtered.map((u) => {
-              // Coerce MySQL 0/1 integers to real booleans once per row.
-              // Without this, JSX expressions like {0 && <Btn/>} render a
-              // literal "0" character into the DOM instead of nothing.
               const hardLocked = !!u.is_hard_locked;
               const approved   = !!u.is_approved;
               const isDeleted  = u.email.endsWith("@orca-deleted");
-
-              // Deleted rows are muted; hard-locked (live) rows get the red
-              // tint. Deleted takes priority over all other row styles.
-              const rowStyle = isDeleted
-                ? { opacity: 0.5 }
-                : hardLocked
-                ? { background: "#1c0a0a" }
-                : {};
+              const rowStyle = userRowStyle(isDeleted, hardLocked);
 
               return (
                 <tr key={u.id} style={rowStyle}>

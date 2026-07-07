@@ -57,6 +57,54 @@ export function fetchCsrfToken({ force = false } = {}) {
 
 let refreshPromise = null;
 
+function buildRequestHeaders(url, options, mutating) {
+  const token = sessionStorage.getItem(STORAGE_KEY);
+  const csrfToken = sessionStorage.getItem(CSRF_KEY);
+  const headers = refreshHeaders({ ...options.headers });
+
+  if (token && url.startsWith("/api")) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  if (mutating && csrfToken) {
+    headers["x-csrf-token"] = csrfToken;
+  }
+  return headers;
+}
+
+async function retryOnCsrfFailure(url, options, headers, response) {
+  const method = (options.method || "GET").toUpperCase();
+  const mutating = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
+  if (response.status !== 403 || !mutating) return response;
+
+  const errorData = await response.clone().json().catch(() => ({}));
+  if (errorData.code !== "CSRF_INVALID") return response;
+
+  await fetchCsrfToken({ force: true });
+  const csrfToken = sessionStorage.getItem(CSRF_KEY);
+  if (csrfToken) {
+    headers["x-csrf-token"] = csrfToken;
+    return fetch(url, { ...options, headers, credentials: "include" });
+  }
+  return response;
+}
+
+async function signOutOnUnauthorized() {
+  sessionStorage.removeItem(STORAGE_KEY);
+  sessionStorage.removeItem(REFRESH_KEY);
+  sessionStorage.removeItem(CSRF_KEY);
+
+  const isAdminPath = globalThis.location.pathname.startsWith("/adm/");
+  const loginPath = isAdminPath ? "/adm/administratorLogin" : "/login";
+  const alreadyOnLogin =
+    globalThis.location.pathname === "/adm/administratorLogin"
+    || globalThis.location.pathname === "/login";
+
+  if (alreadyOnLogin) return;
+
+  await fetchCsrfToken({ force: true });
+  globalThis.location.replace(loginPath);
+}
+
 /**
  * Exchange the refresh token for a fresh access token, storing it. Returns the
  * new token, or null if refresh isn't possible (no refresh token, or the server
@@ -129,57 +177,20 @@ export async function apiFetch(url, options = {}) {
   const method = (options.method || "GET").toUpperCase();
   const mutating = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
 
-  // If mutating and storage is empty, wait for the token initialization
   if (mutating && !sessionStorage.getItem(CSRF_KEY)) {
     await fetchCsrfToken();
   }
 
-  let token = sessionStorage.getItem(STORAGE_KEY);
-  let csrfToken = sessionStorage.getItem(CSRF_KEY);
-  let headers = refreshHeaders({ ...options.headers });
-
-  if (token && url.startsWith("/api")) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-  if (mutating && csrfToken) {
-    headers["x-csrf-token"] = csrfToken;
-  }
-
+  const headers = buildRequestHeaders(url, options, mutating);
   let response = await fetch(url, { ...options, headers, credentials: "include" });
 
-  // CSRF recovery: if a mutating request is rejected for a stale CSRF token,
-  // fetch a fresh one and retry ONCE before giving up. (Access-token 401s are
-  // handled separately below.)
-  if (response.status === 403 && mutating) {
-    const errorData = await response.clone().json().catch(() => ({}));
-    // Detect the CSRF rejection by its machine code, not the user-facing text —
-    // that text is intentionally generic and no longer mentions CSRF.
-    if (errorData.code === "CSRF_INVALID") {
+  response = await retryOnCsrfFailure(url, options, headers, response);
 
-      // Force a fresh token bound to the current identity — bypass any in-flight
-      // fetch that may have started under the previous session identifier.
-      await fetchCsrfToken({ force: true });
-      csrfToken = sessionStorage.getItem(CSRF_KEY);
-      
-      if (csrfToken) {
-        // Re-attach the new token and retry the request silently
-        headers["x-csrf-token"] = csrfToken;
-        response = await fetch(url, { ...options, headers, credentials: "include" });
-      }
-    }
-  }
-
-  // 401 recovery — the access token was rejected. Before signing the user out,
-  // try to refresh it ONCE and retry the request. This handles the token-
-  // rotation race: the silent refresh rotates the session's token_hash, so a
-  // request that carried the just-rotated (old) token gets a 401 even though
-  // the session is perfectly alive. Only a refresh that itself fails means the
-  // session is genuinely dead (revoked, expired, deleted).
   if (
-    response.status === 401 &&
-    !options.__retried &&
-    !url.includes("/api/auth/refresh") &&
-    sessionStorage.getItem(REFRESH_KEY)
+    response.status === 401
+    && !options.__retried
+    && !url.includes("/api/auth/refresh")
+    && sessionStorage.getItem(REFRESH_KEY)
   ) {
     const newToken = await refreshAccessToken();
     if (newToken) {
@@ -187,27 +198,8 @@ export async function apiFetch(url, options = {}) {
     }
   }
 
-  // Global 401 handler — the session really is gone (refresh unavailable or
-  // rejected). Sign the user out.
   if (response.status === 401) {
-    // Clear every stored credential so the user is fully signed out locally.
-    sessionStorage.removeItem(STORAGE_KEY);
-    sessionStorage.removeItem(REFRESH_KEY);
-    sessionStorage.removeItem(CSRF_KEY);
-
-    // Redirect to the correct login page based on where the user is now.
-    // Admin panel pages live under /adm/; everyone else uses /login.
-    const isAdminPath = globalThis.location.pathname.startsWith("/adm/");
-    const loginPath = isAdminPath ? "/adm/administratorLogin" : "/login";
-
-    // Only redirect if we aren't already on a login page (avoids redirect
-    // loops if the login page itself makes an unauthenticated API call).
-    const alreadyOnLogin = globalThis.location.pathname === "/adm/administratorLogin" || globalThis.location.pathname === "/login";
-
-    if (!alreadyOnLogin) {
-      await fetchCsrfToken({ force: true }); // fresh anonymous-bound token before redirecting
-      globalThis.location.replace(loginPath);
-    }
+    await signOutOnUnauthorized();
   }
 
   return response;
