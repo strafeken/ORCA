@@ -50,9 +50,18 @@ router.use(authMiddleware, requireRole('admin'));
  * future logger version (or an older log line) already has them correct.
  */
 
-// Matches a JSON object appended to the end of a message string, e.g.
-// 'ADMIN_LIST_USERS {"userId":5,"actionType":"ADMIN_LIST_USERS",...}'
-const TRAILING_JSON_RE = /\{[\s\S]*\}\s*$/;
+// Extract a JSON object appended to the end of a message string, e.g.
+// 'ADMIN_LIST_USERS {"userId":5,"actionType":"ADMIN_LIST_USERS",...}'.
+// Implemented with a linear indexOf/slice rather than a regex to avoid any
+// possibility of super-linear backtracking (ReDoS / DoS, S5852): we take the
+// substring from the first '{' to the end and let JSON.parse validate it.
+function extractTrailingJson(msg) {
+  if (typeof msg !== 'string') return null;
+  const start = msg.indexOf('{');
+  if (start === -1) return null;
+  const candidate = msg.slice(start).trim();
+  return candidate.endsWith('}') ? candidate : null;
+}
 
 // Resolve a usable IP from the embedded audit payload, falling back to the
 // parsed row; '—' is treated as "no value". Extracted from a nested ternary
@@ -91,11 +100,11 @@ function extractAuditFields(parsed) {
   // Otherwise try to recover the fields from a trailing JSON blob inside
   // the message string itself.
   const rawMsg = parsed.message || parsed.msg || '';
-  const match = typeof rawMsg === 'string' ? TRAILING_JSON_RE.exec(rawMsg) : null;
+  const jsonBlob = extractTrailingJson(rawMsg);
 
-  if (match) {
+  if (jsonBlob) {
     try {
-      const embedded = JSON.parse(match[0]);
+      const embedded = JSON.parse(jsonBlob);
       const actionType = embedded.actionType ?? null;
       return {
         userId: embedded.userId ?? null,

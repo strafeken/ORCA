@@ -156,26 +156,28 @@ export default function Register() {
             </div>
 
             <div className="orca-field">
-              <span style={s.label} id="role-group-label">I am a…</span>
-              <div style={s.roleRow} role="group" aria-labelledby="role-group-label">
-                {["worker", "expert"].map((r) => (
-                  <button
-                    type="button"
-                    key={r}
-                    onClick={() => setRole(r)}
-                    className="orca-btn"
-                    style={{
-                      flex: 1,
-                      textTransform: "capitalize",
-                      background: role === r ? "var(--orca-hi)" : "transparent",
-                      color: role === r ? "var(--orca-abyss)" : "var(--orca-ink)",
-                      border: `1px solid ${role === r ? "var(--orca-hi)" : "var(--orca-line)"}`,
-                    }}
-                  >
-                    {r}
-                  </button>
-                ))}
-              </div>
+              <fieldset style={{ border: "none", padding: 0, margin: 0 }}>
+                <legend style={s.label}>I am a…</legend>
+                <div style={s.roleRow}>
+                  {["worker", "expert"].map((r) => (
+                    <button
+                      type="button"
+                      key={r}
+                      onClick={() => setRole(r)}
+                      className="orca-btn"
+                      style={{
+                        flex: 1,
+                        textTransform: "capitalize",
+                        background: role === r ? "var(--orca-hi)" : "transparent",
+                        color: role === r ? "var(--orca-abyss)" : "var(--orca-ink)",
+                        border: `1px solid ${role === r ? "var(--orca-hi)" : "var(--orca-line)"}`,
+                      }}
+                    >
+                      {r}
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
             </div>
 
             <button
