@@ -33,7 +33,7 @@ export default function AppShell() {
   const guardLeave = useCallback(
     (e, to) => {
       if (callActiveRef.current && to !== location.pathname) {
-        if (!window.confirm(CALL_LEAVE_MESSAGE)) {
+        if (!globalThis.confirm(CALL_LEAVE_MESSAGE)) {
           e.preventDefault();
           return;
         }
