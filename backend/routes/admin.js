@@ -54,6 +54,15 @@ router.use(authMiddleware, requireRole('admin'));
 // 'ADMIN_LIST_USERS {"userId":5,"actionType":"ADMIN_LIST_USERS",...}'
 const TRAILING_JSON_RE = /\{[\s\S]*\}\s*$/;
 
+// Resolve a usable IP from the embedded audit payload, falling back to the
+// parsed row; '—' is treated as "no value". Extracted from a nested ternary
+// for readability.
+function resolveIp(embeddedIp, parsedIp) {
+  if (embeddedIp && embeddedIp !== '—') return embeddedIp;
+  if (parsedIp && parsedIp !== '—') return parsedIp;
+  return null;
+}
+
 function extractAuditFields(parsed) {
   // Prefer real top-level fields if a line already has them (forward
   // compatible with a corrected logger).
@@ -82,7 +91,7 @@ function extractAuditFields(parsed) {
   // Otherwise try to recover the fields from a trailing JSON blob inside
   // the message string itself.
   const rawMsg = parsed.message || parsed.msg || '';
-  const match = typeof rawMsg === 'string' ? rawMsg.match(TRAILING_JSON_RE) : null;
+  const match = typeof rawMsg === 'string' ? TRAILING_JSON_RE.exec(rawMsg) : null;
 
   if (match) {
     try {
@@ -94,7 +103,7 @@ function extractAuditFields(parsed) {
         category: embedded.category ?? categorizeAction(actionType),
         resourceType: embedded.resourceType ?? null,
         resourceId: embedded.resourceId ?? null,
-        ip: embedded.ip && embedded.ip !== '—' ? embedded.ip : (parsed.ip && parsed.ip !== '—' ? parsed.ip : null),
+        ip: resolveIp(embedded.ip, parsed.ip),
         // Strip the JSON suffix back out so the displayed message is just
         // the human-readable action name, not "ACTION {...raw json...}".
         cleanMsg: rawMsg.slice(0, match.index).trim() || rawMsg,

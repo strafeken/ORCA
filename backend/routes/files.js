@@ -240,13 +240,17 @@ router.post('/:id/voice', ...guard, uploadVoice.single('audio'), async (req, res
   } catch (err) {
     deleteFileSafely(rawPath);
     deleteFileSafely(outputPath);
-    const status = err.message === 'VOICE_TOO_LONG' ? 400 : err.message === 'INVALID_AUDIO' ? 400 : 500;
-    const message =
-      err.message === 'VOICE_TOO_LONG'
-        ? 'Voice message is too long.'
-        : err.message === 'INVALID_AUDIO'
-          ? 'Could not process that recording as audio.'
-          : 'Could not process the uploaded voice message.';
+    // Map known voice-processing errors to a status + message; anything else
+    // is an unexpected 500. Extracted from nested ternaries for readability.
+    const VOICE_ERRORS = new Map([
+      ['VOICE_TOO_LONG', { status: 400, message: 'Voice message is too long.' }],
+      ['INVALID_AUDIO', { status: 400, message: 'Could not process that recording as audio.' }],
+    ]);
+    const mapped = VOICE_ERRORS.get(err.message) ?? {
+      status: 500,
+      message: 'Could not process the uploaded voice message.',
+    };
+    const { status, message } = mapped;
     if (status === 500) system.error('Voice upload failed', { context: 'files', error: err.message });
     res.status(status).json({ error: message });
   }

@@ -156,8 +156,8 @@ export default function Register() {
             </div>
 
             <div className="orca-field">
-              <label>I am a…</label>
-              <div style={s.roleRow}>
+              <span style={s.label} id="role-group-label">I am a…</span>
+              <div style={s.roleRow} role="group" aria-labelledby="role-group-label">
                 {["worker", "expert"].map((r) => (
                   <button
                     type="button"

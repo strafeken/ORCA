@@ -65,8 +65,9 @@ export default function DeleteAccount() {
             Confirm your password to continue to account deletion.
           </p>
           <div style={s.field}>
-            <label style={s.label}>Current password</label>
+            <label style={s.label} htmlFor="delete-current-password">Current password</label>
             <input
+              id="delete-current-password"
               type="password"
               style={s.input}
               value={currentPassword}

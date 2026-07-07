@@ -97,8 +97,9 @@ export default function PasswordChange() {
         <form onSubmit={handleReauth}>
           <p style={{ ...s.sub, marginBottom: 16 }}>Confirm your current password to continue.</p>
           <div style={s.field}>
-            <label style={s.label}>Current password</label>
+            <label style={s.label} htmlFor="pc-current-password">Current password</label>
             <input
+              id="pc-current-password"
               type="password"
               style={s.input}
               value={currentPassword}
@@ -118,8 +119,9 @@ export default function PasswordChange() {
         <form onSubmit={handleChangePassword}>
           <p style={{ ...s.sub, marginBottom: 16 }}>Choose a new password.</p>
           <div style={s.field}>
-            <label style={s.label}>New password</label>
+            <label style={s.label} htmlFor="pc-new-password">New password</label>
             <input
+              id="pc-new-password"
               type="password"
               style={s.input}
               value={newPassword}
@@ -131,8 +133,9 @@ export default function PasswordChange() {
             />
           </div>
           <div style={s.field}>
-            <label style={s.label}>Confirm new password</label>
+            <label style={s.label} htmlFor="pc-confirm-password">Confirm new password</label>
             <input
+              id="pc-confirm-password"
               type="password"
               style={s.input}
               value={confirmPassword}

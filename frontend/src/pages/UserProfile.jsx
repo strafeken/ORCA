@@ -114,8 +114,9 @@ function PersonalInfo({ profile, onUpdated }) {
       <h1 style={s.h1}>Personal info</h1>
 
       <div style={s.field}>
-        <label style={s.label}>Display name</label>
+        <label style={s.label} htmlFor="profile-name">Display name</label>
         <input
+          id="profile-name"
           style={s.input}
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -124,8 +125,9 @@ function PersonalInfo({ profile, onUpdated }) {
       </div>
 
       <div style={s.field}>
-        <label style={s.label}>Contact number</label>
+        <label style={s.label} htmlFor="profile-contact">Contact number</label>
         <input
+          id="profile-contact"
           style={s.input}
           value={contactNumber}
           onChange={(e) => setContactNumber(e.target.value)}
@@ -134,8 +136,9 @@ function PersonalInfo({ profile, onUpdated }) {
       </div>
 
       <div style={s.field}>
-        <label style={s.label}>Bio</label>
+        <label style={s.label} htmlFor="profile-bio">Bio</label>
         <textarea
+          id="profile-bio"
           style={{ ...s.input, minHeight: 90, resize: "vertical" }}
           value={bio}
           onChange={(e) => setBio(e.target.value)}
