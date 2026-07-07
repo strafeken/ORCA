@@ -873,7 +873,9 @@ export default function ConsultThread({ conversationId, counterpart, onCallActiv
         <>
           <div className="orca-video-grid" style={s.videoGrid}>
             <div className="orca-video-box" style={s.videoBox}>
-              <video ref={localVideoRef} style={s.video} autoPlay muted playsInline />
+              <video ref={localVideoRef} style={s.video} autoPlay muted playsInline>
+                <track kind="captions" label="Captions unavailable" />
+              </video>
               <canvas ref={localCanvasRef} style={s.annotationCanvas(false)} />
               <span style={s.videoLabel}>You</span>
               {canFlip && (
@@ -889,9 +891,13 @@ export default function ConsultThread({ conversationId, counterpart, onCallActiv
               )}
             </div>
             <div className="orca-video-box" style={s.videoBox}>
-              <video ref={remoteVideoRef} style={s.video} autoPlay playsInline />
+              <video ref={remoteVideoRef} style={s.video} autoPlay playsInline>
+                <track kind="captions" label="Captions unavailable" />
+              </video>
               <canvas
                 ref={remoteCanvasRef}
+                role="application"
+                aria-label="Draw annotations on remote video"
                 style={s.annotationCanvas(callStatus === "in-call")}
                 onPointerDown={handleDrawStart}
                 onPointerMove={handleDrawMove}
@@ -1040,7 +1046,9 @@ function FileBubble({ msg, isMe, convId, annotationVersion, onAnnotate }) {
       {isImage ? (
         <>
           {objectUrl ? (
-            <img src={objectUrl} alt={msg.original_filename} style={s.thumb} onClick={download} />
+            <button type="button" style={s.thumbBtn} onClick={download} aria-label={`Download ${msg.original_filename}`}>
+              <img src={objectUrl} alt={msg.original_filename} style={s.thumb} />
+            </button>
           ) : (
             <div style={s.thumbLoading}>Loading image…</div>
           )}
@@ -1072,7 +1080,9 @@ function VoiceBubble({ msg, isMe, convId }) {
     <div style={s.bubble(isMe)}>
       {!isMe && <div style={s.senderName}>{msg.sender_name}</div>}
       {objectUrl ? (
-        <audio controls src={objectUrl} style={{ width: 220 }} />
+        <audio controls src={objectUrl} style={{ width: 220 }}>
+          <track kind="captions" label="Captions unavailable" />
+        </audio>
       ) : (
         <div style={s.thumbLoading}>Loading voice message…</div>
       )}
@@ -1152,7 +1162,8 @@ const s = {
   iconBtnActive: { background: "#ef4444", color: "#fff", borderColor: "#ef4444" },
   input: { flex: 1, padding: "10px 14px", borderRadius: 8, border: "1px solid var(--orca-line)", background: "var(--orca-slate)", color: "var(--orca-ink)", fontSize: 14 },
   sendBtn: { padding: "10px 18px", borderRadius: 8, border: "none", background: "var(--orca-hi)", color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer" },
-  thumb: { display: "block", maxWidth: 220, maxHeight: 220, borderRadius: 8, cursor: "pointer", objectFit: "cover" },
+  thumbBtn: { display: "block", padding: 0, border: "none", background: "none", cursor: "pointer", lineHeight: 0 },
+  thumb: { display: "block", maxWidth: 220, maxHeight: 220, borderRadius: 8, objectFit: "cover" },
   thumbLoading: { width: 220, height: 120, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--orca-faint)", fontSize: 12, background: "rgba(255,255,255,0.05)", borderRadius: 8 },
   fileRow: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 6 },
   fileName: { fontSize: 12, opacity: 0.9, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 140 },

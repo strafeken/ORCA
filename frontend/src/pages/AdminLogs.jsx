@@ -147,7 +147,7 @@ export default function AdminLogs() {
   const actionTypes = useMemo(() => {
     const types = new Set();
     logs.forEach((l) => { if (l.actionType) types.add(l.actionType); });
-    return ["all", ...Array.from(types).sort()];
+    return ["all", ...Array.from(types).sort((a, b) => a.localeCompare(b))];
   }, [logs]);
 
   // Apply client-side text search + category + action filter.

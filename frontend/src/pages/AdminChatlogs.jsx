@@ -312,13 +312,19 @@ function AdminFileItem({ convId, item }) {
         {error ? (
           <div style={s.mediaError}>Could not load image.</div>
         ) : objectUrl ? (
-          <img
-            src={objectUrl}
-            alt={item.original_filename}
-            style={s.mediaThumb}
+          <button
+            type="button"
+            style={s.mediaThumbBtn}
             onClick={download}
             title="Click to download original"
-          />
+            aria-label={`Download ${item.original_filename}`}
+          >
+            <img
+              src={objectUrl}
+              alt={item.original_filename}
+              style={s.mediaThumb}
+            />
+          </button>
         ) : (
           <div style={s.mediaLoading}>Loading image…</div>
         )}
@@ -344,7 +350,9 @@ function AdminVoiceItem({ convId, item }) {
 
   return (
     <div style={s.voiceRow}>
-      <audio controls src={objectUrl} style={{ width: 260 }} />
+      <audio controls src={objectUrl} style={{ width: 260 }}>
+        <track kind="captions" label="Captions unavailable" />
+      </audio>
       {item.duration_seconds ? <span style={s.voiceDur}>{item.duration_seconds}s</span> : null}
     </div>
   );
@@ -392,7 +400,8 @@ const s = {
   msgRole: { fontSize: 10, color: "var(--orca-muted)", background: "var(--orca-line)", padding: "1px 6px", borderRadius: 4 },
   msgTime: { fontSize: 11, color: "var(--orca-muted)", fontFamily: "monospace", marginLeft: "auto" },
   msgContent: { fontSize: 13, color: "var(--orca-ink)", margin: 0, lineHeight: 1.55, wordBreak: "break-word" },
-  mediaThumb: { maxWidth: 240, maxHeight: 240, borderRadius: 8, border: "1px solid var(--orca-line)", cursor: "pointer", display: "block" },
+  mediaThumbBtn: { padding: 0, border: "none", background: "none", cursor: "pointer", display: "block", lineHeight: 0 },
+  mediaThumb: { maxWidth: 240, maxHeight: 240, borderRadius: 8, border: "1px solid var(--orca-line)", display: "block" },
   mediaCaption: { fontSize: 11, color: "var(--orca-muted)", marginTop: 4 },
   mediaLoading: { fontSize: 12, color: "var(--orca-muted)", padding: "8px 0" },
   mediaError: { fontSize: 12, color: "#f87171", padding: "8px 0" },
