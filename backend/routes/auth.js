@@ -297,7 +297,7 @@ router.post('/logout', async (req, res) => {
     try {
       const { verifyToken } = require('../utils/tokens');
       const authHeader = req.headers['authorization'];
-      if (authHeader && authHeader.startsWith('Bearer ')) {
+      if (authHeader?.startsWith('Bearer ')) {
         const decoded = verifyToken(authHeader.split(' ')[1]);
         if (decoded?.id) {
           eventBus.publish(new DomainEvent('USER_LOGOUT', {

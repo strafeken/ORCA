@@ -37,7 +37,7 @@ const SCHEME = 'v1';
 const KEY_HEX = process.env.MESSAGE_ENC_KEY;
 
 function getKey() {
-  if (!KEY_HEX || KEY_HEX.length !== 64) {
+  if (!KEY_HEX || KEY_HEX?.length !== 64) {
     throw new Error('MESSAGE_ENC_KEY must be set to 64 hex chars (32 bytes).');
   }
   return Buffer.from(KEY_HEX, 'hex');
