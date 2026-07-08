@@ -1,5 +1,4 @@
-# ORCA — Onsite Remote Construction Assistance
-
+# ORCA - Onsite Remote Construction Assistance (P2 Team 36)
 ORCA is a secure, real-time communication platform designed to bridge the gap between on-site construction workers and verified remote technical experts. The platform enables rapid, secure decision-making on active job sites to mitigate safety incidents, structural risks, and project delays.
 
 When a problem comes up on site, a Worker shouldn't have to wait for someone to physically travel out to look at it. ORCA lets them get an Expert's eyes on the issue immediately, whether that means a quick chat, a photo with annotations pointing at the crack in question, a voice note recorded on the move, or a live video call walking the expert through the site in real time.
