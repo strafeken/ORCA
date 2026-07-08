@@ -44,22 +44,38 @@ ORCA handles sensitive site data and credentials, so security isn't an afterthou
 ## Project Structure
 
 ```
-ICT2216-SSD/
-├── backend/              # Express API, Socket.IO server, auth & business logic
-│   ├── db/                  # Schema (init.sql), seed data, migrations
-│   ├── middleware/           # Auth, RBAC, rate limiting
-│   ├── routes/               # REST endpoints (auth, users, admin, etc.)
-│   ├── sockets/               # Real-time chat / call signalling handlers
-│   └── utils/                 # Tokens, logging, mail, TOTP helpers
-├── frontend/             # React + Vite single-page application
+ORCA/
+├── backend/                 # Express API, Socket.IO server, auth & business logic
+│   ├── adapters/            # Mail, password hashing, token signing, transcoder adapters
+│   ├── constants/           # Password policy constants
+│   ├── controllers/         # Route controllers (conversations, experts)
+│   ├── data/                # Static data, e.g. NCSC common-password blocklist
+│   ├── db/                  # Schema (init.sql), seed data, connection pool
+│   ├── domain/              # Domain models & events (e.g. TokenFactory)
+│   ├── middleware/          # Auth, RBAC, rate limiting, password checks
+│   ├── repositories/        # Data access layer (conversations, sessions, users)
+│   ├── routes/              # REST endpoints (auth, users, admin, experts, files, voip, etc.)
+│   ├── services/            # Business logic (conversations, experts)
+│   ├── sockets/             # Real-time chat / call signalling handlers
+│   ├── tests/               # Jest unit & integration tests
+│   ├── utils/               # Tokens, logging, mail, TOTP, crypto helpers
+│   ├── app.js               # Express app assembly (also used by tests)
+│   └── server.js            # Entry point
+├── frontend/                # React + Vite single-page application
 │   └── src/
-│       ├── auth/               # Auth context, route guards, API client
-│       ├── components/          # Shared UI (shells, layout)
-│       └── pages/                # Routed pages, including /admin
-├── nginx/                # Reverse proxy configuration
-├── loki/ & alloy/         # Logging pipeline configuration
-├── docker-compose.yml      # Local/dev orchestration
-└── docker-compose.prod.yml # Production orchestration
+│       ├── auth/            # Auth context, route guards, API client
+│       ├── components/      # Shared UI (shells, layout)
+│       ├── hooks/           # Shared React hooks
+│       ├── pages/           # Routed pages, including /admin
+│       ├── styles/          # Global/shared styles
+│       ├── tests/           # Vitest unit tests
+│       └── utils/           # Frontend helpers
+├── e2e/                     # Playwright end-to-end tests (two-tier: full suite pre-merge, smoke post-deploy)
+├── nginx/                   # Reverse proxy configuration (prod, dev, and e2e variants)
+├── loki/ & alloy/           # Logging pipeline configuration
+├── docker-compose.yml       # Local/dev orchestration
+├── docker-compose.e2e.yml   # Disposable stack used by the E2E test suite
+└── docker-compose.prod.yml  # Production orchestration
 ```
 
 ## Getting Started
@@ -67,7 +83,7 @@ ICT2216-SSD/
 ### Prerequisites
 
 - Docker and Docker Compose
-- Node.js 20+ (only needed if running the frontend or backend outside of Docker)
+- Node.js 24+ (only needed if running the frontend/backend outside of Docker, or running the test suites)
 
 ### Setup
 
@@ -85,6 +101,8 @@ ICT2216-SSD/
    | `DB_HOST`, `DB_PORT` | Backend's connection target for MySQL |
    | `JWT_SECRET` | Signing secret for access tokens |
    | `TOTP_ENC_KEY` | Encryption key for stored TOTP secrets |
+   | `MESSAGE_ENC_KEY` | Encryption key for stored chat message content |
+   | `CSRF_SECRET` | Secret used by the double-submit CSRF cookie scheme |
    | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` | Outbound email for verification & password resets |
    | `APP_URL` | Base URL used in outbound email links |
    | `LOKI_URL` | Loki endpoint the backend logger ships to |
@@ -114,6 +132,26 @@ cd frontend
 npm install
 npm run dev
 ```
+
+## Testing
+
+- **Backend** — Jest + Supertest unit and integration tests.
+
+  ```bash
+  cd backend
+  npm test
+  npm run test:coverage
+  ```
+
+- **Frontend** — Vitest + Testing Library unit tests.
+
+  ```bash
+  cd frontend
+  npm test
+  npm run test:coverage
+  ```
+
+- **End-to-end** — Playwright, run in two tiers: the full suite pre-merge against a disposable `docker-compose.e2e.yml` stack, and a smoke-only subset post-deploy against the live environment. See `e2e/README.md` for the full local setup (generating a throwaway `.env`, spinning up the stack, running `npm test` from `e2e/`).
 
 ## Linting
 
